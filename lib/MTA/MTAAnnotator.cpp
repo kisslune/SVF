@@ -5,7 +5,6 @@
  *      Author: Yulei Sui, Peng Di
  */
 
-#include "Util/Options.h"
 #include "MTA/MTAAnnotator.h"
 #include "MTA/LockAnalysis.h"
 #include <sstream>
@@ -13,6 +12,7 @@
 using namespace SVF;
 using namespace SVFUtil;
 
+static llvm::cl::opt<u32_t> AnnoFlag("anno", llvm::cl::init(0), llvm::cl::desc("prune annotated instructions: 0001 Thread Local; 0002 Alias; 0004 MHP."));
 
 void MTAAnnotator::annotateDRCheck(Instruction* inst)
 {
@@ -84,7 +84,7 @@ const Value* MTAAnnotator::getStoreOperand(const Instruction* inst)
     }
 
     assert(false);
-    return nullptr;
+    return NULL;
 }
 const Value* MTAAnnotator::getLoadOperand(const Instruction* inst)
 {
@@ -98,21 +98,21 @@ const Value* MTAAnnotator::getLoadOperand(const Instruction* inst)
     }
 
     assert(false);
-    return nullptr;
+    return NULL;
 }
 
 void MTAAnnotator::initialize(MHP* m, LockAnalysis* la)
 {
     mhp = m;
     lsa = la;
-    if (!Options::AnnoFlag)
+    if (!AnnoFlag)
         return;
     collectLoadStoreInst(mhp->getTCT()->getPTA()->getModule());
 }
 
 void MTAAnnotator::pruneThreadLocal(PointerAnalysis* pta)
 {
-    bool AnnoLocal = Options::AnnoFlag & ANNO_LOCAL;
+    bool AnnoLocal = AnnoFlag & ANNO_LOCAL;
     if (!AnnoLocal)
         return;
 
@@ -199,8 +199,8 @@ void MTAAnnotator::pruneThreadLocal(PointerAnalysis* pta)
 void MTAAnnotator::pruneAliasMHP(PointerAnalysis* pta)
 {
 
-    bool AnnoMHP = Options::AnnoFlag & ANNO_MHP;
-    bool AnnoAlias = Options::AnnoFlag & ANNO_ALIAS;
+    bool AnnoMHP = AnnoFlag & ANNO_MHP;
+    bool AnnoAlias = AnnoFlag & ANNO_ALIAS;
 
     if (!AnnoMHP && !AnnoAlias)
         return;
@@ -268,7 +268,7 @@ void MTAAnnotator::pruneAliasMHP(PointerAnalysis* pta)
 }
 void MTAAnnotator::performAnnotate()
 {
-    if (!Options::AnnoFlag)
+    if (!AnnoFlag)
         return;
     for (InstSet::iterator it = storeset.begin(), eit = storeset.end(); it != eit; ++it)
     {

@@ -68,10 +68,10 @@ void ThreadCallGraph::updateCallGraph(PointerAnalysis* pta)
     }
 
     // Fork sites
-    for (CallSiteSet::const_iterator it = forksitesBegin(), eit = forksitesEnd(); it != eit; ++it)
+    for (CallSiteSet::iterator it = forksitesBegin(), eit = forksitesEnd(); it != eit; ++it)
     {
         const Value* forkedval = tdAPI->getForkedFun((*it)->getCallSite());
-        if(SVFUtil::dyn_cast<Function>(forkedval)==nullptr)
+        if(SVFUtil::dyn_cast<Function>(forkedval)==NULL)
         {
             PAG* pag = pta->getPAG();
             const PointsTo& targets = pta->getPts(pag->getValueNode(forkedval));
@@ -92,10 +92,10 @@ void ThreadCallGraph::updateCallGraph(PointerAnalysis* pta)
     }
 
     // parallel_for sites
-    for (CallSiteSet::const_iterator it = parForSitesBegin(), eit = parForSitesEnd(); it != eit; ++it)
+    for (CallSiteSet::iterator it = parForSitesBegin(), eit = parForSitesEnd(); it != eit; ++it)
     {
         const Value* forkedval = tdAPI->getTaskFuncAtHareParForSite((*it)->getCallSite());
-        if(SVFUtil::dyn_cast<Function>(forkedval)==nullptr)
+        if(SVFUtil::dyn_cast<Function>(forkedval)==NULL)
         {
             PAG* pag = pta->getPAG();
             const PointsTo& targets = pta->getPts(pag->getValueNode(forkedval));
@@ -123,12 +123,12 @@ void ThreadCallGraph::updateCallGraph(PointerAnalysis* pta)
 void ThreadCallGraph::updateJoinEdge(PointerAnalysis* pta)
 {
 
-    for (CallSiteSet::const_iterator it = joinsitesBegin(), eit = joinsitesEnd(); it != eit; ++it)
+    for (CallSiteSet::iterator it = joinsitesBegin(), eit = joinsitesEnd(); it != eit; ++it)
     {
         const Value* jointhread = tdAPI->getJoinedThread((*it)->getCallSite());
         // find its corresponding fork sites first
         CallSiteSet forkset;
-        for (CallSiteSet::const_iterator it = forksitesBegin(), eit = forksitesEnd(); it != eit; ++it)
+        for (CallSiteSet::iterator it = forksitesBegin(), eit = forksitesEnd(); it != eit; ++it)
         {
             const Value* forkthread = tdAPI->getForkedThread((*it)->getCallSite());
             if (pta->alias(jointhread, forkthread))

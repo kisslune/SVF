@@ -60,7 +60,7 @@ bool ProgSlice::AllPathReachableSolve()
             const SVFGNode* succ = edge->getDstNode();
             if(inBackwardSlice(succ))
             {
-                Condition* vfCond = nullptr;
+                Condition* vfCond = NULL;
                 const BasicBlock* nodeBB = getSVFGNodeBB(node);
                 const BasicBlock* succBB = getSVFGNodeBB(succ);
                 /// clean up the control flow conditions for next round guard computation
@@ -182,7 +182,7 @@ const Value* ProgSlice::getLLVMValue(const SVFGNode* node) const
         return fr->getRet()->getValue();
     }
 
-    return nullptr;
+    return NULL;
 }
 
 /*!
@@ -199,7 +199,7 @@ std::string ProgSlice::evalFinalCond() const
     std::string str;
     raw_string_ostream rawstr(str);
     NodeBS elems = pathAllocator->exactCondElem(finalCond);
-    Set<std::string> locations;
+    std::set<std::string> locations;
     for(NodeBS::iterator it = elems.begin(), eit = elems.end(); it!=eit; ++it)
     {
         Condition* atom = pathAllocator->getCond(*it);
@@ -207,7 +207,7 @@ std::string ProgSlice::evalFinalCond() const
         locations.insert(getSourceLoc(tinst));
     }
     /// print leak path after eliminating duplicated element
-    for(Set<std::string>::iterator iter = locations.begin(), eiter = locations.end();
+    for(std::set<std::string>::iterator iter = locations.begin(), eiter = locations.end();
             iter!=eiter; ++iter)
     {
         rawstr << "\t\t  --> (" << *iter << ") \n";

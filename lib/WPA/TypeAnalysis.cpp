@@ -27,7 +27,6 @@
  *      Author: Yulei Sui
  */
 
-#include "Util/Options.h"
 #include "SVF-FE/CPPUtil.h"
 #include "SVF-FE/ICFGBuilder.h"
 #include "SVF-FE/CHG.h"
@@ -41,12 +40,13 @@ using namespace SVFUtil;
 using namespace cppUtil;
 using namespace std;
 
+llvm::cl::opt<bool> genICFG("genicfg", llvm::cl::init(true), llvm::cl::desc("Generate ICFG graph"));
 
 /// Initialize analysis
 void TypeAnalysis::initialize()
 {
-	AndersenBase::initialize();
-    if (Options::GenICFG)
+    Andersen::initialize();
+    if (genICFG)
     {
         icfg = PAG::getPAG()->getICFG();
         icfg->dump("icfg_initial");
@@ -62,7 +62,7 @@ void TypeAnalysis::initialize()
 /// Finalize analysis
 void TypeAnalysis::finalize()
 {
-    AndersenBase::finalize();
+    Andersen::finalize();
     if (print_stat)
         dumpCHAStats();
 }

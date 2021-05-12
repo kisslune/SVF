@@ -5,7 +5,6 @@
  *      Author: pengd
  */
 
-#include "Util/Options.h"
 #include "MTA/LockAnalysis.h"
 #include "MTA/MTA.h"
 #include "MTA/MTAResultValidator.h"
@@ -14,6 +13,7 @@
 using namespace SVF;
 using namespace SVFUtil;
 
+static llvm::cl::opt<bool> PrintLockSpan("print-lock", llvm::cl::init(false), llvm::cl::desc("Print Thread Interleaving Results"));
 
 namespace SVF
 {

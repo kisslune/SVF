@@ -27,7 +27,6 @@
  *      Author: Yulei Sui
  */
 
-#include "Util/Options.h"
 #include "Util/SVFUtil.h"
 #include "SVF-FE/LLVMUtil.h"
 
@@ -46,6 +45,8 @@ using namespace SVF;
 #define KCYA  "\x1B[1;36m"
 #define KWHT  "\x1B[1;37m"
 
+static llvm::cl::opt<bool> DisableWarn("dwarn", llvm::cl::init(true),
+                                       llvm::cl::desc("Disable warning"));
 
 
 /*!
@@ -66,7 +67,7 @@ std::string SVFUtil::wrnMsg(std::string msg)
 
 void SVFUtil::writeWrnMsg(std::string msg)
 {
-    if(Options::DisableWarn) return;
+    if(DisableWarn) return;
     outs() << wrnMsg(msg) << "\n";
 }
 
@@ -111,25 +112,6 @@ void SVFUtil::dumpPointsToSet(unsigned node, NodeBS bs)
     outs() << "}\n";
 }
 
-// For use from the debugger.
-void SVFUtil::dumpSparseSet(const NodeBS& bs)
-{
-    outs() << "{";
-    dumpSet(bs);
-    outs() << "}\n";
-}
-
-void SVFUtil::dumpPointsToList(const PointsToList& ptl)
-{
-    outs() << "{";
-    for (PointsToList::const_iterator ii = ptl.begin(), ie = ptl.end();
-         ii != ie; ii++)
-    {
-        auto bs = *ii;
-        dumpSparseSet(bs);
-    }
-    outs() << "}\n";
-}
 
 /*!
  * Dump alias set
@@ -193,21 +175,21 @@ bool SVFUtil::getMemoryUsageKB(u32_t* vmrss_kb, u32_t* vmsize_kb)
     bool found_vmrss = false;
     bool found_vmsize = false;
 
-    while (line != nullptr && (found_vmrss == false || found_vmsize == false))
+    while (line != NULL && (found_vmrss == false || found_vmsize == false))
     {
-        if (strstr(line, "VmRSS:") != nullptr)
+        if (strstr(line, "VmRSS:") != NULL)
         {
             sscanf(line, "%*s %u", vmrss_kb);
             found_vmrss = true;
         }
 
-        if (strstr(line, "VmSize:") != nullptr)
+        if (strstr(line, "VmSize:") != NULL)
         {
             sscanf(line, "%*s %u", vmsize_kb);
             found_vmsize = true;
         }
 
-        line = strtok(nullptr, delims);
+        line = strtok(NULL, delims);
     }
 
     return (found_vmrss && found_vmsize);
@@ -258,7 +240,7 @@ std::string SVFUtil::getSourceLocOfFunction(const Function *F)
  */
 std::string SVFUtil::getSourceLoc(const Value* val)
 {
-    if(val==nullptr)  return "{ empty val }";
+    if(val==NULL)  return "{ empty val }";
 
     std::string str;
     raw_string_ostream rawstr(str);
@@ -282,18 +264,9 @@ std::string SVFUtil::getSourceLoc(const Value* val)
         {
             llvm::DILocation* Loc = SVFUtil::cast<llvm::DILocation>(N);                   // DILocation is in DebugInfo.h
             unsigned Line = Loc->getLine();
-            unsigned Column = Loc->getColumn();
             StringRef File = Loc->getFilename();
             //StringRef Dir = Loc.getDirectory();
-            if(File.str().empty() || Line == 0) {
-                auto inlineLoc = Loc->getInlinedAt();
-                if(inlineLoc) {
-                    Line = inlineLoc->getLine();
-                    Column = inlineLoc->getColumn();
-                    File = inlineLoc->getFilename();
-                }   
-            }
-            rawstr << "ln: " << Line << "  cl: " << Column << "  fl: " << File;
+            rawstr << "ln: " << Line << " fl: " << File;
         }
     }
     else if (const Argument* argument = SVFUtil::dyn_cast<Argument>(val))
@@ -335,48 +308,11 @@ std::string SVFUtil::getSourceLoc(const Value* val)
     {
         rawstr << getSourceLocOfFunction(func);
     }
-    else if (const BasicBlock* bb = SVFUtil::dyn_cast<BasicBlock>(val))
-    {
-        rawstr << "basic block: " << bb->getName() << " " << getSourceLoc(bb->getFirstNonPHI());
-    }
-    else if(SVFUtil::isConstantData(val))
-    {
-        rawstr << "constant data";
-    }
     else
     {
-        rawstr << "Can only get source location for instruction, argument, global var, function or constant data.";
+        rawstr << "Can only get source location for instruction, argument, global var or function.";
     }
     rawstr << " }";
 
     return rawstr.str();
-}
-
-
-/*!
- * return string of an LLVM Value
- */
-const std::string SVFUtil::value2String(const Value* value) {
-    std::string str;
-    raw_string_ostream rawstr(str);
-    if(value){
-        if(const SVF::Function* fun = SVFUtil::dyn_cast<Function>(value))
-            rawstr << " " << fun->getName() << " ";
-        else
-            rawstr << " " << *value << " ";
-        rawstr << getSourceLoc(value);
-    }
-    return rawstr.str();
-}
-
-void SVFFunction::viewCFG() {
-    if (fun != nullptr) {
-        fun->viewCFG();
-    }
-}
-
-void SVFFunction::viewCFGOnly() {
-    if (fun != nullptr) {
-        fun->viewCFGOnly();
-    }
 }

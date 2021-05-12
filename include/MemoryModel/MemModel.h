@@ -61,9 +61,9 @@ private:
     /// flattened field offsets of of a struct
     std::vector<u32_t> foffset;
     /// Types of all fields of a struct
-    Map<u32_t, const llvm::Type*> fldIdx2TypeMap;
+    DenseMap<u32_t, const llvm::Type*> fldIdx2TypeMap;
     /// Types of all fields of a struct
-    Map<u32_t, const llvm::Type*> offset2TypeMap;
+    DenseMap<u32_t, const llvm::Type*> offset2TypeMap;
     /// All field infos after flattening a struct
     std::vector<FieldInfo> finfo;
 
@@ -298,7 +298,7 @@ public:
     MemObj(const Value *val, SymID id);
 
     /// Constructor for black hole and constant obj
-    MemObj(SymID id, const Type* type = nullptr);
+    MemObj(SymID id, const Type* type = NULL);
 
     /// Destructor
     ~MemObj()

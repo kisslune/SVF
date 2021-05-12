@@ -93,7 +93,7 @@ PTACallGraph* ThreadCallGraphBuilder::buildThreadCallGraph(SVFModule* svfModule)
                 // indirect call to the start routine function
                 else
                 {
-                    cg->addThreadForkEdgeSetMap(cs,nullptr);
+                    cg->addThreadForkEdgeSetMap(cs,NULL);
                 }
             }
             else if (tdAPI->isHareParFor(inst))
@@ -108,7 +108,7 @@ PTACallGraph* ThreadCallGraphBuilder::buildThreadCallGraph(SVFModule* svfModule)
                 // indirect call to the start routine function
                 else
                 {
-                    cg->addHareParForEdgeSetMap(cs,nullptr);
+                    cg->addHareParForEdgeSetMap(cs,NULL);
                 }
             }
         }

@@ -32,7 +32,7 @@
 using namespace SVF;
 using namespace SVFUtil;
 
-AndersenSFR *AndersenSFR::sfrAndersen = nullptr;
+AndersenSFR *AndersenSFR::sfrAndersen = NULL;
 
 /*!
  *
@@ -139,7 +139,7 @@ void AndersenSFR::fieldExpand(NodeSet& initials, Size_t offset, NodeBS& strides,
             else
                 assert(false && "Not an object node!!");
 
-            Set<Size_t> offsets;
+            std::set<Size_t> offsets;
             offsets.insert(offset);
 
             // calculate offsets

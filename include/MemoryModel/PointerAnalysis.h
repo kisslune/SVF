@@ -32,11 +32,11 @@
 
 #include "Graphs/PAG.h"
 #include "MemoryModel/ConditionalPT.h"
-#include "MemoryModel/AbstractPointsToDS.h"
-#include "MemoryModel/MutablePointsToDS.h"
+#include "MemoryModel/PointsToDS.h"
 #include "Graphs/PTACallGraph.h"
 #include "Util/SCC.h"
 #include "Util/PathCondAllocator.h"
+#include "MemoryModel/PointsToDFDS.h"
 
 namespace SVF
 {
@@ -58,7 +58,6 @@ public:
     enum PTATY
     {
         // Whole program analysis
-        Andersen_BASE,		///< Base Andersen PTA
         Andersen_WPA,		///< Andersen PTA
         AndersenLCD_WPA,	///< Lazy cycle detection andersen-style WPA
         AndersenHCD_WPA,    ///< Hybird cycle detection andersen-style WPA
@@ -67,13 +66,11 @@ public:
         AndersenSFR_WPA,    ///< Stride-based field representation
         AndersenWaveDiff_WPA,	///< Diff wave propagation andersen-style WPA
         AndersenWaveDiffWithType_WPA,	///< Diff wave propagation with type info andersen-style WPA
-        Steensgaard_WPA,      ///< Steensgaard PTA
         CSCallString_WPA,	///< Call string based context sensitive WPA
         CSSummary_WPA,		///< Summary based context sensitive WPA
         FSDATAFLOW_WPA,	///< Traditional Dataflow-based flow sensitive WPA
         FSSPARSE_WPA,		///< Sparse flow sensitive WPA
         FSTBHC_WPA,		///< Sparse flow-sensitive type-based heap cloning WPA
-        VFS_WPA,		///< Versioned sparse flow-sensitive WPA
         FSCS_WPA,			///< Flow-, context- sensitive WPA
         FSCSPS_WPA,		///< Flow-, context-, path- sensitive WPA
         ADAPTFSCS_WPA,		///< Adaptive Flow-, context-, sensitive WPA
@@ -101,13 +98,13 @@ public:
     /// Indirect call edges type, map a callsite to a set of callees
     //@{
     typedef llvm::AliasAnalysis AliasAnalysis;
-    typedef Set<const CallBlockNode*> CallSiteSet;
+    typedef DenseSet<const CallBlockNode*> CallSiteSet;
     typedef PAG::CallSiteToFunPtrMap CallSiteToFunPtrMap;
-    typedef Set<const SVFFunction*> FunctionSet;
-    typedef OrderedMap<const CallBlockNode*, FunctionSet> CallEdgeMap;
+    typedef DenseSet<const SVFFunction*> FunctionSet;
+    typedef DenseMap<const CallBlockNode*, FunctionSet> CallEdgeMap;
     typedef SCCDetection<PTACallGraph*> CallGraphSCC;
-    typedef Set<const GlobalValue*> VTableSet;
-    typedef Set<const SVFFunction*> VFunSet;
+    typedef DenseSet<const GlobalValue*> VTableSet;
+    typedef DenseSet<const SVFFunction*> VFunSet;
     //@}
 
     static const std::string aliasTestMayAlias;
@@ -211,7 +208,7 @@ public:
         return svfMod;
     }
     /// Get all Valid Pointers for resolution
-    inline OrderedNodeSet& getAllValidPtrs()
+    inline NodeSet& getAllValidPtrs()
     {
         return pag->getAllValidPtrs();
     }
@@ -243,11 +240,11 @@ public:
     virtual AliasResult alias(NodeID node1, NodeID node2) = 0;
 
     /// Get points-to targets of a pointer. It needs to be implemented in child class
-    virtual const PointsTo& getPts(NodeID ptr) = 0;
+    virtual PointsTo& getPts(NodeID ptr) = 0;
 
     /// Given an object, get all the nodes having whose pointsto contains the object.
     /// Similar to getPts, this also needs to be implemented in child classes.
-    virtual const NodeBS& getRevPts(NodeID nodeId) = 0;
+    virtual PointsTo& getRevPts(NodeID nodeId) = 0;
 
     /// Clear points-to data
     virtual void clearPts()
@@ -297,11 +294,11 @@ public:
 
     /// Determine whether a points-to contains a black hole or constant node
     //@{
-    inline bool containBlackHoleNode(const PointsTo& pts)
+    inline bool containBlackHoleNode(PointsTo& pts)
     {
         return pts.test(pag->getBlackHoleNode());
     }
-    inline bool containConstantNode(const PointsTo& pts)
+    inline bool containConstantNode(PointsTo& pts)
     {
         return pts.test(pag->getConstantNode());
     }
@@ -395,7 +392,7 @@ public:
     //@}
 
     /// Resolve indirect call edges
-    virtual void resolveIndCalls(const CallBlockNode* cs, const PointsTo& target, CallEdgeMap& newEdges,LLVMCallGraph* callgraph = nullptr);
+    virtual void resolveIndCalls(const CallBlockNode* cs, const PointsTo& target, CallEdgeMap& newEdges,LLVMCallGraph* callgraph = NULL);
     /// Match arguments for callsite at caller and callee
     bool matchArgs(const CallBlockNode* cs, const SVFFunction* callee);
 
@@ -404,7 +401,7 @@ public:
     /// CallGraph SCC detection
     inline void callGraphSCCDetection()
     {
-        if(callGraphSCC==nullptr)
+        if(callGraphSCC==NULL)
             callGraphSCC = new CallGraphSCC(ptaCallGraph);
 
         callGraphSCC->find();

@@ -26,19 +26,19 @@ class MHP
 {
 
 public:
-    typedef Set<const Function*> FunSet;
-    typedef Set<const Instruction*> InstSet;
-    typedef Set<const StmtSVFGNode*> SVFGNodeSet;
+    typedef std::set<const Function*> FunSet;
+    typedef std::set<const Instruction*> InstSet;
+    typedef std::set<const StmtSVFGNode*> SVFGNodeSet;
     typedef TCT::InstVec InstVec;
     typedef FIFOWorkList<CxtThreadStmt> CxtThreadStmtWorkList;
-    typedef Set<CxtThreadStmt> CxtThreadStmtSet;
-    typedef Map<const CxtThreadStmt,NodeBS> ThreadStmtToThreadInterleav;
-    typedef Map<const Instruction*,CxtThreadStmtSet> InstToThreadStmtSetMap;
+    typedef std::set<CxtThreadStmt> CxtThreadStmtSet;
+    typedef std::map<const CxtThreadStmt,NodeBS> ThreadStmtToThreadInterleav;
+    typedef std::map<const Instruction*,CxtThreadStmtSet> InstToThreadStmtSetMap;
 
-    typedef Set<CxtStmt> LockSpan;
+    typedef std::set<CxtStmt> LockSpan;
 
     typedef std::pair<const Function*,const Function*> FuncPair;
-    typedef Map<FuncPair, bool> FuncPairToBool;
+    typedef std::map<FuncPair, bool> FuncPairToBool;
 
     /// Constructor
     MHP(TCT* t);
@@ -273,12 +273,12 @@ public:
     };
 
     typedef TCT::InstVec InstVec;
-    typedef Map<const CxtStmt,ValDomain> CxtStmtToAliveFlagMap;
-    typedef Map<const CxtStmt,NodeBS> CxtStmtToTIDMap;
-    typedef Set<NodePair> ThreadPairSet;
-    typedef Map<const CxtStmt, const Loop*> CxtStmtToLoopMap;
+    typedef std::map<const CxtStmt,ValDomain> CxtStmtToAliveFlagMap;
+    typedef std::map<const CxtStmt,NodeBS> CxtStmtToTIDMap;
+    typedef std::set<NodePair> ThreadPairSet;
+    typedef std::map<const CxtStmt, const Loop*> CxtStmtToLoopMap;
     typedef FIFOWorkList<CxtStmt> CxtStmtWorkList;
-    typedef Map<const Instruction*, PTASCEV> forkjoinToPTASCEVMap;
+    typedef std::map<const Instruction*, PTASCEV> forkjoinToPTASCEVMap;
     ForkJoinAnalysis(TCT* t) : tct(t)
     {
         collectSCEVInfo();
@@ -305,7 +305,7 @@ public:
         CxtStmtToLoopMap::const_iterator it = cxtJoinInLoop.find(cs);
         if(it!=cxtJoinInLoop.end())
             return it->second;
-        return nullptr;
+        return NULL;
     }
     /// Whether thread t1 happens-before thread t2
     inline bool isHBPair(NodeID tid1, NodeID tid2)

@@ -45,10 +45,10 @@ class ConstraintGraph :  public GenericGraph<ConstraintNode,ConstraintEdge>
 {
 
 public:
-    typedef Map<NodeID, ConstraintNode *> ConstraintNodeIDToNodeMapTy;
+    typedef DenseMap<NodeID, ConstraintNode *> ConstraintNodeIDToNodeMapTy;
     typedef ConstraintEdge::ConstraintEdgeSetTy::iterator ConstraintNodeIter;
-    typedef Map<NodeID, NodeID> NodeToRepMap;
-    typedef Map<NodeID, NodeBS> NodeToSubsMap;
+    typedef DenseMap<NodeID, NodeID> NodeToRepMap;
+    typedef DenseMap<NodeID, NodeBS> NodeToSubsMap;
     typedef FIFOWorkList<NodeID> WorkList;
 
 protected:
@@ -165,10 +165,8 @@ public:
             auto eit = LoadCGEdgeSet.find(&edge);
             return *eit;
         }
-        else{
+        else
             assert(false && "no other kind!");
-            return nullptr;
-        }
     }
 
     ///Add a PAG edge into Edge map
@@ -362,9 +360,6 @@ public:
     void dump(std::string name);
     /// Print CG into terminal
     void print();
-
-    /// View graph from the debugger.
-    void view();
 };
 
 } // End namespace SVF

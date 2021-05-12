@@ -61,7 +61,7 @@ const char* MemSSAStat::NumOfBBHasMSSAPhi = "BBHasMSSAPhi";	///< Number of basic
 /*!
  * Constructor
  */
-MemSSAStat::MemSSAStat(MemSSA* memSSA) : PTAStat(nullptr)
+MemSSAStat::MemSSAStat(MemSSA* memSSA) : PTAStat(NULL)
 {
     mssa = memSSA;
     startClk();
@@ -134,7 +134,7 @@ void MemSSAStat::printStat()
 /*!
  * Constructor
  */
-SVFGStat::SVFGStat(SVFG* g) : PTAStat(nullptr)
+SVFGStat::SVFGStat(SVFG* g) : PTAStat(NULL)
 {
     graph = g;
     clear();
@@ -161,7 +161,6 @@ void SVFGStat::clear()
 
     totalInEdge = totalOutEdge = 0;
     totalIndInEdge = totalIndOutEdge = 0;
-    totalIndEdgeLabels = 0;
 
     totalIndCallEdge = totalIndRetEdge = 0;
     totalDirCallEdge = totalDirRetEdge = 0;
@@ -222,7 +221,6 @@ void SVFGStat::performStat()
     PTNumStatMap["TotalEdge"] = totalInEdge;
     PTNumStatMap["DirectEdge"] = totalInEdge - totalIndInEdge;
     PTNumStatMap["IndirectEdge"] = totalIndInEdge;
-    PTNumStatMap["IndirectEdgeLabels"] = totalIndEdgeLabels;
 
     PTNumStatMap["IndCallEdge"] = totalIndCallEdge;
     PTNumStatMap["IndRetEdge"] = totalIndRetEdge;
@@ -323,7 +321,6 @@ void SVFGStat::calculateNodeDegrees(SVFGNode* node, NodeSet& nodeHasIndInEdge, N
             // TODO: try a new method to calculate weight.
             const PointsTo& cpts = edge->getPointsTo();
             avgWeight += cpts.count();
-            totalIndEdgeLabels += cpts.count();
         }
 
         if (SVFUtil::isa<CallDirSVFGEdge>(*edgeIt))
@@ -395,7 +392,7 @@ void SVFGStat::performSCCStat(SVFGEdgeSet insensitiveCalRetEdges)
     SVFGSCC* svfgSCC = new SVFGSCC(graph);
     svfgSCC->find();
 
-    NodeSet sccRepNodeSet;
+    DenseNodeSet sccRepNodeSet;
     SVFG::SVFGNodeIDToNodeMapTy::iterator it = graph->begin();
     SVFG::SVFGNodeIDToNodeMapTy::iterator eit = graph->end();
     for (; it != eit; ++it)

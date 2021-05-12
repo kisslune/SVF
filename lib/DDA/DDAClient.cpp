@@ -8,7 +8,6 @@
  */
 
 
-#include "Util/Options.h"
 #include "Util/SVFUtil.h"
 #include "SVF-FE/CPPUtil.h"
 
@@ -20,6 +19,32 @@
 using namespace SVF;
 using namespace SVFUtil;
 
+static llvm::cl::opt<bool> SingleLoad("single-load", llvm::cl::init(true),
+                                      llvm::cl::desc("Count load pointer with same source operand as one query"));
+
+static llvm::cl::opt<bool> DumpFree("dump-free", llvm::cl::init(false),
+                                    llvm::cl::desc("Dump use after free locations"));
+
+static llvm::cl::opt<bool> DumpUninitVar("dump-uninit-var", llvm::cl::init(false),
+        llvm::cl::desc("Dump uninitialised variables"));
+
+static llvm::cl::opt<bool> DumpUninitPtr("dump-uninit-ptr", llvm::cl::init(false),
+        llvm::cl::desc("Dump uninitialised pointers"));
+
+static llvm::cl::opt<bool> DumpSUPts("dump-su-pts", llvm::cl::init(false),
+                                     llvm::cl::desc("Dump strong updates store"));
+
+static llvm::cl::opt<bool> DumpSUStore("dump-su-store", llvm::cl::init(false),
+                                       llvm::cl::desc("Dump strong updates store"));
+
+static llvm::cl::opt<bool> MallocOnly("malloc-only", llvm::cl::init(true),
+                                      llvm::cl::desc("Only add tainted objects for malloc"));
+
+static llvm::cl::opt<bool> TaintUninitHeap("uninit-heap", llvm::cl::init(true),
+        llvm::cl::desc("detect uninitialized heap variables"));
+
+static llvm::cl::opt<bool> TaintUninitStack("uninit-stack", llvm::cl::init(true),
+        llvm::cl::desc("detect uninitialized stack variables"));
 
 void DDAClient::answerQueries(PointerAnalysis* pta)
 {
@@ -33,7 +58,7 @@ void DDAClient::answerQueries(PointerAnalysis* pta)
     collectCandidateQueries(pta->getPAG());
 
     u32_t count = 0;
-    for (OrderedNodeSet::iterator nIter = candidateQueries.begin();
+    for (NodeSet::iterator nIter = candidateQueries.begin();
             nIter != candidateQueries.end(); ++nIter,++count)
     {
         PAGNode* node = pta->getPAG()->getPAGNode(*nIter);
@@ -53,7 +78,7 @@ void DDAClient::answerQueries(PointerAnalysis* pta)
     stat->setMemUsageAfter(vmrss, vmsize);
 }
 
-OrderedNodeSet& FunptrDDAClient::collectCandidateQueries(PAG* p)
+NodeSet& FunptrDDAClient::collectCandidateQueries(PAG* p)
 {
     setPAG(p);
     for(PAG::CallSiteToFunPtrMap::const_iterator it = pag->getIndirectCallsites().begin(),
@@ -116,8 +141,8 @@ void FunptrDDAClient::performStat(PointerAnalysis* pta)
         if(ddaPts.count() >= anderPts.count() || ddaPts.empty())
             continue;
 
-        Set<const SVFFunction*> ander_vfns;
-        Set<const SVFFunction*> dda_vfns;
+        DenseSet<const SVFFunction*> ander_vfns;
+        DenseSet<const SVFFunction*> dda_vfns;
         ander->getVFnsFromPts(cbn,anderPts, ander_vfns);
         pta->getVFnsFromPts(cbn,ddaPts, dda_vfns);
 
@@ -151,7 +176,7 @@ void FunptrDDAClient::performStat(PointerAnalysis* pta)
 
 
 /// Only collect function pointers as query candidates.
-OrderedNodeSet& AliasDDAClient::collectCandidateQueries(PAG* pag)
+NodeSet& AliasDDAClient::collectCandidateQueries(PAG* pag)
 {
     setPAG(pag);
     PAGEdge::PAGEdgeSetTy& loads = pag->getEdgeSet(PAGEdge::Load);

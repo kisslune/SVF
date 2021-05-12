@@ -9,7 +9,6 @@
 
 #include <sstream>
 
-#include "Util/Options.h"
 #include "SVF-FE/DCHG.h"
 #include "SVF-FE/CPPUtil.h"
 #include "Util/SVFUtil.h"
@@ -18,6 +17,7 @@
 
 using namespace SVF;
 
+static llvm::cl::opt<bool> printDCHG("print-dchg", llvm::cl::init(false), llvm::cl::desc("print the DCHG if debug information is available"));
 
 void DCHGraph::handleDIBasicType(const DIBasicType *basicType)
 {
@@ -42,7 +42,7 @@ void DCHGraph::handleDICompositeType(const DICompositeType *compositeType)
             if (!fields.empty())
             {
                 // We want the first non-static, non-function member; it may not exist.
-                DIDerivedType *firstMember = nullptr;
+                DIDerivedType *firstMember = NULL;
                 for (DINode *n : fields)
                 {
                     if (DIDerivedType *fm = SVFUtil::dyn_cast<DIDerivedType>(n))
@@ -55,7 +55,7 @@ void DCHGraph::handleDICompositeType(const DICompositeType *compositeType)
                     }
                 }
 
-                if (firstMember != nullptr)
+                if (firstMember != NULL)
                 {
                     // firstMember is a DW_TAG_member, we want the base type beneath it.
                     addEdge(compositeType, firstMember->getBaseType(), DCHEdge::FIRST_FIELD);
@@ -142,8 +142,8 @@ void DCHGraph::handleTypedef(const DIType *typedefType)
     // Need to gather them in a set first because we don't know the base type till
     // we get to the bottom of the (potentially many) typedefs.
     std::vector<const DIDerivedType *> typedefs;
-    // Check for nullptr because you can typedef void.
-    while (typedefType != nullptr && typedefType->getTag() == dwarf::DW_TAG_typedef)
+    // Check for NULL because you can typedef void.
+    while (typedefType != NULL && typedefType->getTag() == dwarf::DW_TAG_typedef)
     {
         const DIDerivedType *typedefDerivedType = SVFUtil::dyn_cast<DIDerivedType>(typedefType);
         // The typedef itself.
@@ -220,7 +220,7 @@ void DCHGraph::buildVTables(const Module &module)
 const NodeBS &DCHGraph::cha(const DIType *type, bool firstField)
 {
     type = getCanonicalType(type);
-    Map<const DIType *, NodeBS> &cacheMap = firstField ? chaFFMap : chaMap;
+    DenseMap<const DIType *, NodeBS> &cacheMap = firstField ? chaFFMap : chaMap;
 
     // Check if we've already computed.
     if (cacheMap.find(type) != cacheMap.end())
@@ -405,7 +405,7 @@ DCHNode *DCHGraph::getOrCreateNode(const DIType *type)
     type = getCanonicalType(type);
 
     // Check, does the node for type exist?
-    if (diTypeToNodeMap[type] != nullptr)
+    if (diTypeToNodeMap[type] != NULL)
     {
         return diTypeToNodeMap[type];
     }
@@ -424,7 +424,7 @@ DCHEdge *DCHGraph::addEdge(const DIType *t1, const DIType *t2, DCHEdge::GEdgeKin
     DCHNode *dst = getOrCreateNode(t2);
 
     DCHEdge *edge = hasEdge(t1, t2, et);
-    if (edge == nullptr)
+    if (edge == NULL)
     {
         // Create a new edge.
         edge = new DCHEdge(src, dst, et);
@@ -451,7 +451,7 @@ DCHEdge *DCHGraph::hasEdge(const DIType *t1, const DIType *t2, DCHEdge::GEdgeKin
         }
     }
 
-    return nullptr;
+    return NULL;
 }
 
 void DCHGraph::buildCHG(bool extend)
@@ -529,7 +529,7 @@ void DCHGraph::buildCHG(bool extend)
         }
     }
 
-    if (Options::PrintDCHG)
+    if (printDCHG)
     {
         print();
     }
@@ -1138,7 +1138,7 @@ void DCHGraph::print(void)
     SVFUtil::outs() << thickLine;
     unsigned numStructs = 0;
     unsigned largestStruct = 0;
-    NodeSet nodes;
+    DenseNodeSet nodes;
     for (DCHGraph::const_iterator it = begin(); it != end(); ++it)
     {
         nodes.insert(it->first);
@@ -1230,13 +1230,13 @@ void DCHGraph::print(void)
 
         currIndent += singleIndent;
 
-        const Set<const DIDerivedType *> &typedefs = node->getTypedefs();
+        const DenseSet<const DIDerivedType *> &typedefs = node->getTypedefs();
         for (const DIDerivedType *tdef : typedefs)
         {
             std::string typedefName = "void";
-            if (tdef != nullptr)
+            if (tdef != NULL)
             {
-                typedefName = tdef->getName().str();
+                typedefName = tdef->getName();
             }
 
             SVFUtil::outs() << indent(currIndent) << typedefName << "\n";

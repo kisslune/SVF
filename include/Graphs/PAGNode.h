@@ -103,12 +103,12 @@ public:
     {
         if (value)
             return value->getType();
-        return nullptr;
+        return NULL;
     }
 
     inline bool hasValue() const
     {
-        return value!=nullptr;
+        return value!=NULL;
     }
     /// Whether it is a pointer
     virtual inline bool isPointer() const
@@ -126,7 +126,6 @@ public:
         return isATPointer;
     }
     /// Whether it is constant data, i.e., "0", "1.001", "str"
-    /// or llvm's metadata, i.e., metadata !4087
     inline bool isConstantData() const
     {
         if (hasValue())
@@ -135,13 +134,10 @@ public:
             return false;
     }
 
-    /// Whether this is an isoloated node on the PAG graph
-    bool isIsolatedNode() const;
-
     /// Get name of the LLVM value
     virtual const std::string getValueName() const = 0;
 
-    /// Return the function that this PAGNode resides in. Return nullptr if it is a global or constantexpr node
+    /// Return the function that this PAGNode resides in. Return NULL if it is a global or constantexpr node
     virtual inline const Function* getFunction() const
     {
         if(value)
@@ -153,7 +149,7 @@ public:
             else if (const Function* fun = SVFUtil::dyn_cast<Function>(value))
                 return fun;
         }
-        return nullptr;
+        return NULL;
     }
 
     /// Get incoming PAG edges
@@ -250,12 +246,6 @@ public:
 
     virtual const std::string toString() const;
 
-    /// Get shape and/or color of node for .dot display.
-    virtual const std::string getNodeAttrForDotDisplay() const;
-
-    /// Dump to console for debugging
-    void dump() const;
-
     //@}
     /// Overloading operator << for dumping PAGNode value
     //@{
@@ -305,7 +295,7 @@ public:
     inline const std::string getValueName() const
     {
         if (value && value->hasName())
-            return value->getName().str();
+            return value->getName();
         return "";
     }
 
@@ -365,7 +355,7 @@ public:
     virtual const std::string getValueName() const
     {
         if (value && value->hasName())
-            return value->getName().str();
+            return value->getName();
         return "";
     }
     /// Return type of the value
@@ -484,7 +474,6 @@ public:
     GepObjPN(const MemObj* mem, NodeID i, const LocationSet& l, PNODEK ty = GepObjNode) :
         ObjPN(mem->getRefVal(), i, mem, ty), ls(l)
     {
-        base = mem->getSymId();
     }
 
     /// offset of the mem object
@@ -508,7 +497,7 @@ public:
     /// Return the type of this gep object
     inline virtual const llvm::Type* getType() const
     {
-        return SymbolTableInfo::SymbolInfo()->getOrigSubTypeWithByteOffset(mem->getType(), ls.getByteOffset());
+        return SymbolTableInfo::Symbolnfo()->getOrigSubTypeWithByteOffset(mem->getType(), ls.getByteOffset());
     }
 
     /// Return name of a LLVM value
@@ -674,7 +663,7 @@ public:
     //@}
 
     /// Constructor
-    DummyValPN(NodeID i) : ValPN(nullptr, i, DummyValNode)
+    DummyValPN(NodeID i) : ValPN(NULL, i, DummyValNode)
     {
     }
 
@@ -716,7 +705,7 @@ public:
 
     /// Constructor
     DummyObjPN(NodeID i,const MemObj* m, PNODEK ty = DummyObjNode)
-        : ObjPN(nullptr, i, m, ty)
+        : ObjPN(NULL, i, m, ty)
     {
     }
 

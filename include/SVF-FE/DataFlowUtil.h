@@ -44,10 +44,10 @@ class PTASCEV
 {
 
 public:
-    PTASCEV():scev(nullptr), start(nullptr), step(nullptr),ptr(nullptr),inloop(false),tripcount(0) {}
+    PTASCEV():scev(NULL), start(NULL), step(NULL),ptr(NULL),inloop(false),tripcount(0) {}
 
     /// Constructor
-    PTASCEV(const Value* p, const SCEV* s, ScalarEvolution* SE): scev(s),start(nullptr), step(nullptr), ptr(p), inloop(false), tripcount(0)
+    PTASCEV(const Value* p, const SCEV* s, ScalarEvolution* SE): scev(s),start(NULL), step(NULL), ptr(p), inloop(false), tripcount(0)
     {
         if(const SCEVAddRecExpr* ar = SVFUtil::dyn_cast<SCEVAddRecExpr>(s))
         {
@@ -120,9 +120,9 @@ public:
 
 class PTACFInfoBuilder{
 public:
-    typedef Map<const Function*, DominatorTree*> FunToDTMap;  ///< map a function to its dominator tree
-    typedef Map<const Function*, PostDominatorTree*> FunToPostDTMap;  ///< map a function to its post dominator tree
-    typedef Map<const Function*, LoopInfo*> FunToLoopInfoMap;  ///< map a function to its loop info
+    typedef DenseMap<const Function*, DominatorTree*> FunToDTMap;  ///< map a function to its dominator tree
+    typedef DenseMap<const Function*, PostDominatorTree*> FunToPostDTMap;  ///< map a function to its post dominator tree
+    typedef DenseMap<const Function*, LoopInfo*> FunToLoopInfoMap;  ///< map a function to its loop info
 
     /// Constructor
      PTACFInfoBuilder();
@@ -160,7 +160,7 @@ public:
     static char ID;
 
     IteratedDominanceFrontier() :
-        DominanceFrontierBase(), DF(nullptr)
+        DominanceFrontierBase(), DF(NULL)
     {
     }
 

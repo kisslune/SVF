@@ -31,7 +31,6 @@
 #define ANDERSENSTAT_H_
 
 #include "Util/BasicTypes.h"
-#include "Util/Options.h"
 #include <iostream>
 #include <map>
 #include <string>
@@ -118,12 +117,22 @@ public:
 
     static const char* NumOfNullPointer;	///< Number of pointers points-to null
 
-    typedef Map<const char*,u32_t> NUMStatMap;
+    /// If set, only return the clock when getClk is called as getClk(true).
+    /// Retrieving the clock is slow but it should be fine for a few calls.
+    /// This is good for benchmarking when we don't need to know how long processLoad
+    /// takes, for example (many calls), but want to know things like total solve time.
+    /// Does not affect CLOCK_IN_MS.
+    static bool markedClocksOnly;
 
-    typedef Map<const char*,double> TIMEStatMap;
+    typedef DenseMap<const char*,u32_t> NUMStatMap;
+
+    typedef DenseMap<const char*,double> TIMEStatMap;
 
     PTAStat(PointerAnalysis* p);
     virtual ~PTAStat() {}
+
+    /// Sets setMarkedClocksOnly through MarkedClocksOnly in PTAStat.cpp.
+    static void setMarkedClocksOnly(void);
 
     virtual inline void startClk()
     {
@@ -134,11 +143,13 @@ public:
         endTime = CLOCK_IN_MS();
     }
     /// When mark is true, real clock is always returned. When mark is false, it is
-    /// only returned when Options::MarkedClocksOnly is not set.
-    /// Default call for getClk is unmarked, while MarkedClocksOnly is false by default.
+    /// only returned when markedClocksOnly is not set; this is the default case.
     static inline double getClk(bool mark=false)
     {
-        if (Options::MarkedClocksOnly && !mark) return 0.0;
+        // Unideal, but should have no effects on performance, compiler should be smart enough
+        // to inline. It would be best if the global MarkedClocksOnly was directly accessible here.
+        setMarkedClocksOnly();
+        if (markedClocksOnly && !mark) return 0.0;
         return CLOCK_IN_MS();
     }
 

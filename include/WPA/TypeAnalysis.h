@@ -35,13 +35,13 @@
 namespace SVF
 {
 
-class TypeAnalysis:  public AndersenBase
+class TypeAnalysis:  public Andersen
 {
 
 public:
     /// Constructor
     TypeAnalysis(PAG* pag)
-        :  AndersenBase(pag, TypeCPP_WPA)
+        :  Andersen(pag)
     {
     }
 
@@ -78,7 +78,7 @@ public:
     //@}
 
 private:
-    Set<CallSite> virtualCallSites;
+    std::set<CallSite> virtualCallSites;
 };
 
 } // End namespace SVF

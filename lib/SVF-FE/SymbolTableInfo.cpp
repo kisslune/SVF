@@ -28,12 +28,8 @@
  *      Author: Yulei Sui
  */
 
-#include <memory>
-
 #include "SVF-FE/SymbolTableInfo.h"
 #include "MemoryModel/MemModel.h"
-#include "Util/NodeIDAllocator.h"
-#include "Util/Options.h"
 #include "Util/SVFModule.h"
 #include "Util/SVFUtil.h"
 #include "SVF-FE/LLVMUtil.h"
@@ -45,15 +41,28 @@ using namespace std;
 using namespace SVF;
 using namespace SVFUtil;
 
-DataLayout* SymbolTableInfo::dl = nullptr;
-SymbolTableInfo* SymbolTableInfo::symInfo = nullptr;
+
+DataLayout* SymbolTableInfo::dl = NULL;
+SymbolTableInfo* SymbolTableInfo::symlnfo = NULL;
+SymID SymbolTableInfo::totalSymNum = 0;
+
+static llvm::cl::opt<unsigned> maxFieldNumLimit("fieldlimit",  llvm::cl::init(512),
+        llvm::cl::desc("Maximum field number for field sensitive analysis"));
+
+static llvm::cl::opt<bool> LocMemModel("locMM", llvm::cl::init(false),
+                                       llvm::cl::desc("Bytes/bits modeling of memory locations"));
+
+static llvm::cl::opt<bool> modelConsts("modelConsts", llvm::cl::init(false),
+                                       llvm::cl::desc("Modeling individual constant objects"));
+
+
 
 /*
  * Initial the memory object here
  */
 void MemObj::init(const Value *val)
 {
-    const PointerType *refTy = nullptr;
+    const PointerType *refTy = NULL;
 
     const Instruction *I = SVFUtil::dyn_cast<Instruction>(val);
 
@@ -68,16 +77,16 @@ void MemObj::init(const Value *val)
     if (refTy)
     {
         Type *objTy = refTy->getElementType();
-        if(Options::LocMemModel)
-            typeInfo = new LocObjTypeInfo(val, objTy, Options::MaxFieldLimit);
+        if(LocMemModel)
+            typeInfo = new LocObjTypeInfo(val, objTy, maxFieldNumLimit);
         else
-            typeInfo = new ObjTypeInfo(val, objTy, Options::MaxFieldLimit);
+            typeInfo = new ObjTypeInfo(val, objTy, maxFieldNumLimit);
         typeInfo->init(val);
     }
     else
     {
         writeWrnMsg("try to create an object with a non-pointer type.");
-        writeWrnMsg(val->getName().str());
+        writeWrnMsg(val->getName());
         writeWrnMsg("(" + getSourceLoc(val) + ")");
         assert(false && "Memory object must be held by a pointer-typed ref value.");
     }
@@ -86,17 +95,17 @@ void MemObj::init(const Value *val)
 /*!
  * Get the symbol table instance
  */
-SymbolTableInfo* SymbolTableInfo::SymbolInfo()
+SymbolTableInfo* SymbolTableInfo::Symbolnfo()
 {
-    if (symInfo == nullptr)
+    if (symlnfo == NULL)
     {
-        if(Options::LocMemModel)
-            symInfo = new LocSymTableInfo();
+        if(LocMemModel)
+            symlnfo = new LocSymTableInfo();
         else
-            symInfo = new SymbolTableInfo();
-        symInfo->setModelConstants(Options::ModelConsts);
+            symlnfo = new SymbolTableInfo();
+        symlnfo->setModelConstants(modelConsts);
     }
-    return symInfo;
+    return symlnfo;
 }
 
 /*!
@@ -104,7 +113,7 @@ SymbolTableInfo* SymbolTableInfo::SymbolInfo()
  */
 void SymbolTableInfo::collectTypeInfo(const Type* ty)
 {
-    assert(typeToFieldInfo.find(ty) == typeToFieldInfo.end() && "this type has been collected before");
+    assert(typeToFieldInfo.find_as(ty) == typeToFieldInfo.end() && "this type has been collected before");
 
     if (const ArrayType* aty = SVFUtil::dyn_cast<ArrayType>(ty))
         collectArrayInfo(aty);
@@ -290,7 +299,7 @@ bool SymbolTableInfo::computeGepOffset(const User *V, LocationSet& ls)
         if (const StructType *ST = SVFUtil::dyn_cast<StructType>(*gi) )
         {
             assert(op && "non-const struct index in GEP");
-            const vector<u32_t> &so = SymbolTableInfo::SymbolInfo()->getFattenFieldIdxVec(ST);
+            const vector<u32_t> &so = SymbolTableInfo::Symbolnfo()->getFattenFieldIdxVec(ST);
             if ((unsigned)idx >= so.size())
             {
                 outs() << "!! Struct index out of bounds" << idx << "\n";
@@ -313,7 +322,7 @@ u32_t SymbolTableInfo::getFields(std::vector<LocationSet>& fields, const Type* T
         return 0;
 
     T = T->getContainedType(0);
-    const std::vector<FieldInfo>& stVec = SymbolTableInfo::SymbolInfo()->getFlattenFieldInfoVec(T);
+    const std::vector<FieldInfo>& stVec = SymbolTableInfo::Symbolnfo()->getFlattenFieldInfoVec(T);
     u32_t sz = stVec.size();
     if (msz < sz)
     {
@@ -412,7 +421,7 @@ LocationSet SymbolTableInfo::getModulusOffset(const MemObj* obj, const LocationS
 void SymbolTableInfo::prePassSchedule(SVFModule* svfModule)
 {
     /// BreakConstantGEPs Pass
-    std::unique_ptr<BreakConstantGEPs> p1 = std::make_unique<BreakConstantGEPs>();
+    BreakConstantGEPs* p1 = new BreakConstantGEPs();
     for (u32_t i = 0; i < LLVMModuleSet::getLLVMModuleSet()->getModuleNum(); ++i)
     {
         Module *module = LLVMModuleSet::getLLVMModuleSet()->getModule(i);
@@ -420,8 +429,7 @@ void SymbolTableInfo::prePassSchedule(SVFModule* svfModule)
     }
 
     /// MergeFunctionRets Pass
-    std::unique_ptr<UnifyFunctionExitNodes> p2 =
-        std::make_unique<UnifyFunctionExitNodes>();
+    UnifyFunctionExitNodes* p2 = new UnifyFunctionExitNodes();
     for (SVFModule::llvm_iterator F = svfModule->llvmFunBegin(), E = svfModule->llvmFunEnd(); F != E; ++F)
     {
         Function *fun = *F;
@@ -442,7 +450,7 @@ void SymbolTableInfo::buildMemModel(SVFModule* svfModule)
 
     mod = svfModule;
 
-    StInfo::setMaxFieldLimit(Options::MaxFieldLimit);
+    StInfo::setMaxFieldLimit(maxFieldNumLimit);
 
     // Object #0 is black hole the object that may point to any object
     assert(totalSymNum == BlackHole && "Something changed!");
@@ -551,15 +559,6 @@ void SymbolTableInfo::buildMemModel(SVFModule* svfModule)
                 if(ret->getReturnValue())
                     collectSym(ret->getReturnValue());
             }
-            else if (const BranchInst *br = SVFUtil::dyn_cast<BranchInst>(inst))
-            {
-                Value* opnd = br->isConditional() ? br->getCondition() : br->getOperand(0);
-                collectSym(opnd);
-            }
-            else if (const SwitchInst *sw = SVFUtil::dyn_cast<SwitchInst>(inst))
-            {
-                collectSym(sw->getCondition());
-            }
             else if (isNonInstricCallSite(inst))
             {
 
@@ -581,11 +580,6 @@ void SymbolTableInfo::buildMemModel(SVFModule* svfModule)
             }
             //@}
         }
-    }
-
-    NodeIDAllocator::get()->endSymbolAllocation();
-    if (Options::SymTabPrint) {
-        SymbolTableInfo::SymbolInfo()->dump();
     }
 }
 
@@ -645,11 +639,10 @@ void SymbolTableInfo::collectVal(const Value *val)
     if (iter == valSymMap.end())
     {
         // create val sym and sym type
-        SymID id = NodeIDAllocator::get()->allocateValueId();
-        valSymMap.insert(std::make_pair(val, id));
-        symTyMap.insert(std::make_pair(id, ValSym));
+        valSymMap.insert(std::make_pair(val, ++totalSymNum));
+        symTyMap.insert(std::make_pair(totalSymNum, ValSym));
         DBOUT(DMemModel,
-              outs() << "create a new value sym " << id << "\n");
+              outs() << "create a new value sym " << totalSymNum << "\n");
         ///  handle global constant expression here
         if (const GlobalVariable* globalVar = SVFUtil::dyn_cast<GlobalVariable>(val))
             handleGlobalCE(globalVar);
@@ -677,16 +670,15 @@ void SymbolTableInfo::collectObj(const Value *val)
         else
         {
             // create obj sym and sym type
-            SymID id = NodeIDAllocator::get()->allocateObjectId();
-            objSymMap.insert(std::make_pair(val, id));
-            symTyMap.insert(std::make_pair(id, ObjSym));
+            objSymMap.insert(std::make_pair(val, ++totalSymNum));
+            symTyMap.insert(std::make_pair(totalSymNum, ObjSym));
             DBOUT(DMemModel,
-                  outs() << "create a new obj sym " << id << "\n");
+                  outs() << "create a new obj sym " << totalSymNum << "\n");
 
             // create a memory object
-            MemObj* mem = new MemObj(val, id);
-            assert(objMap.find(id) == objMap.end());
-            objMap[id] = mem;
+            MemObj* mem = new MemObj(val, totalSymNum);
+            assert(objMap.find(totalSymNum) == objMap.end());
+            objMap[totalSymNum] = mem;
         }
     }
 }
@@ -699,11 +691,10 @@ void SymbolTableInfo::collectRet(const Function *val)
     FunToIDMapTy::iterator iter = returnSymMap.find(val);
     if (iter == returnSymMap.end())
     {
-        SymID id = NodeIDAllocator::get()->allocateValueId();
-        returnSymMap.insert(std::make_pair(val, id));
-        symTyMap.insert(std::make_pair(id, RetSym));
+        returnSymMap.insert(std::make_pair(val, ++totalSymNum));
+        symTyMap.insert(std::make_pair(totalSymNum, RetSym));
         DBOUT(DMemModel,
-              outs() << "create a return sym " << id << "\n");
+              outs() << "create a return sym " << totalSymNum << "\n");
     }
 }
 
@@ -715,11 +706,10 @@ void SymbolTableInfo::collectVararg(const Function *val)
     FunToIDMapTy::iterator iter = varargSymMap.find(val);
     if (iter == varargSymMap.end())
     {
-        SymID id = NodeIDAllocator::get()->allocateValueId();
-        varargSymMap.insert(std::make_pair(val, id));
-        symTyMap.insert(std::make_pair(id, VarargSym));
+        varargSymMap.insert(std::make_pair(val, ++totalSymNum));
+        symTyMap.insert(std::make_pair(totalSymNum, VarargSym));
         DBOUT(DMemModel,
-              outs() << "create a vararg sym " << id << "\n");
+              outs() << "create a vararg sym " << totalSymNum << "\n");
     }
 }
 
@@ -752,12 +742,8 @@ bool SymbolTableInfo::isConstantObjSym(const Value *val)
     {
         if (cppUtil::isValVtbl(const_cast<GlobalVariable*>(v)))
             return false;
-        else if (!v->hasInitializer()){
-            if(v->isExternalLinkage(v->getLinkage()))
-                return false;
-            else
-                return true;
-        }
+        else if (!v->hasInitializer())
+            return true;
         else
         {
             StInfo *stInfo = getStructInfo(v->getInitializer()->getType());
@@ -917,7 +903,7 @@ void SymbolTableInfo::handleGlobalInitializerCE(const Constant *C,
     {
         const StructType *sty = SVFUtil::cast<StructType>(C->getType());
         const std::vector<u32_t>& offsetvect =
-            SymbolTableInfo::SymbolInfo()->getFattenFieldIdxVec(sty);
+            SymbolTableInfo::Symbolnfo()->getFattenFieldIdxVec(sty);
         for (u32_t i = 0, e = C->getNumOperands(); i != e; i++)
         {
             u32_t off = offsetvect[i];
@@ -1001,94 +987,6 @@ void SymbolTableInfo::printFlattenFields(const Type* type)
     }
 }
 
-std::string SymbolTableInfo::toString(SYMTYPE symtype)
-{
-    switch (symtype) {
-        case SYMTYPE::BlackHole: {
-            return "BlackHole";
-        }
-        case SYMTYPE::ConstantObj: {
-            return "ConstantObj";
-        }
-        case SYMTYPE::BlkPtr: {
-            return "BlkPtr";
-        }
-        case SYMTYPE::NullPtr: {
-            return "NullPtr";
-        }
-        case SYMTYPE::ValSym: {
-            return "ValSym";
-        }
-        case SYMTYPE::ObjSym: {
-            return "ObjSym";
-        }
-        case SYMTYPE::RetSym: {
-            return "RetSym";
-        }
-        case SYMTYPE::VarargSym: {
-            return "VarargSym";
-        }
-        default: {
-            return "Invalid SYMTYPE";
-        }
-    }
-}
-
-void SymbolTableInfo::dump()
-{
-    OrderedMap<SymID, Value*> idmap;
-    SymID maxid = 0;
-    for (ValueToIDMapTy::iterator iter = valSymMap.begin(); iter != valSymMap.end();
-         ++iter)
-    {
-        const SymID i = iter->second;
-        maxid = max(i, maxid);
-        Value* val = (Value*) iter->first;
-        idmap[i] = val;
-    }
-    for (ValueToIDMapTy::iterator iter = objSymMap.begin(); iter != objSymMap.end();
-         ++iter)
-    {
-        const SymID i = iter->second;
-        maxid = max(i, maxid);
-        Value* val = (Value*) iter->first;
-        idmap[i] = val;
-    }
-    for (FunToIDMapTy::iterator iter = returnSymMap.begin(); iter != returnSymMap.end();
-         ++iter)
-    {
-        const SymID i = iter->second;
-        maxid = max(i, maxid);
-        Value* val = (Value*) iter->first;
-        idmap[i] = val;
-    }
-    for (FunToIDMapTy::iterator iter = varargSymMap.begin(); iter != varargSymMap.end();
-         ++iter)
-    {
-        const SymID i = iter->second;
-        maxid = max(i, maxid);
-        Value* val = (Value*) iter->first;
-        idmap[i] = val;
-    }
-    outs() << "{SymbolTableInfo \n";
-    for (SymID symid = 0; symid <= maxid; ++symid) {
-        SYMTYPE symtype = this->symTyMap.at(symid);
-        string typestring = toString(symtype);
-        outs() << "  " << typestring << symid;
-        if (symtype < SYMTYPE::ValSym) {
-            outs() << "\n";
-        } else {
-            auto I = idmap.find(symid);
-            if (I == idmap.end()) {
-                outs() << "No value\n";
-                break;
-            }
-            const Value* val = I->second;
-            outs() << " -> " << value2String(val) << "\n";
-        }
-    }
-    outs() << "}\n";
-}
 
 /*
  * Get the type size given a target data layout

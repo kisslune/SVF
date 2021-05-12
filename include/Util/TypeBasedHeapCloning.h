@@ -12,7 +12,7 @@
 
 #include "SVF-FE/DCHG.h"
 #include "Graphs/PAG.h"
-#include "MemoryModel/PointerAnalysisImpl.h"
+#include "MemoryModel/PointerAnalysis.h"
 #include "Util/BasicTypes.h"
 
 namespace SVF
@@ -36,7 +36,7 @@ protected:
     static const std::string mangledDerefFnName;
 
     /// Constructor. pta is the pointer analysis using this object (i.e. that which is extending).
-    TypeBasedHeapCloning(BVDataPTAImpl *pta);
+    TypeBasedHeapCloning(PointerAnalysis *pta);
 
     /// Required by user. Handles back-propagation of newly created clone after all
     /// metadata has been set. Used by cloneObject.
@@ -144,26 +144,26 @@ protected:
 
 private:
     /// PTA extending this class.
-    BVDataPTAImpl *pta;
+    PointerAnalysis *pta;
     /// PAG the PTA uses. Just a shortcut for getPAG().
     PAG *ppag = nullptr;
 
     /// Object -> its type.
-    Map<NodeID, const DIType *> objToType;
+    DenseMap<NodeID, const DIType *> objToType;
     /// Object -> allocation site.
     /// The value NodeID depends on the pointer analysis (could be
     /// an SVFG node or PAG node for example).
-    Map<NodeID, NodeID> objToAllocation;
+    DenseMap<NodeID, NodeID> objToAllocation;
     /// (Original) object -> set of its clones.
-    Map<NodeID, NodeBS> objToClones;
+    DenseMap<NodeID, NodeBS> objToClones;
     /// (Clone) object -> original object (opposite of objToclones).
-    Map<NodeID, NodeID> cloneToOriginalObj;
+    DenseMap<NodeID, NodeID> cloneToOriginalObj;
     /// Maps nodes (a location like a PAG node or SVFG node) to their filter set.
-    Map<NodeID, PointsTo> locToFilterSet;
+    DenseMap<NodeID, PointsTo> locToFilterSet;
     /// Maps objects to the GEP nodes beneath them.
-    Map<NodeID, NodeBS> objToGeps;
+    DenseMap<NodeID, NodeBS> objToGeps;
     /// Maps memory objects to their GEP objects. (memobj -> (fieldidx -> geps))
-    Map<const MemObj *, Map<unsigned, NodeBS>> memObjToGeps;
+    DenseMap<const MemObj *, DenseMap<unsigned, NodeBS>> memObjToGeps;
 
     /// Test whether object is a GEP object. For convenience.
     bool isGep(const PAGNode *n) const;

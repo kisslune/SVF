@@ -60,7 +60,6 @@ void dumpSet(NodeBS To, raw_ostream & O = SVFUtil::outs());
 
 /// Dump points-to set
 void dumpPointsToSet(unsigned node, NodeBS To) ;
-void dumpSparseSet(const NodeBS& To);
 
 /// Dump alias set
 void dumpAliasSet(unsigned node, NodeBS To) ;
@@ -117,35 +116,17 @@ inline bool cmpPts (const PointsTo& lpts,const PointsTo& rpts)
     }
 }
 
-typedef struct equalPointsTo
-{
-    bool operator()(const PointsTo& lhs, const PointsTo& rhs) const
-    {
-        return SVFUtil::cmpPts(lhs, rhs);
-    }
-} equalPointsTo;
-
-typedef OrderedSet<PointsTo, equalPointsTo> PointsToList;
-void dumpPointsToList(const PointsToList& ptl);
-
-inline bool isIntrinsicFun(const Function* func)
-{
-    if (func && (func->getIntrinsicID() == llvm::Intrinsic::donothing ||
-                 func->getIntrinsicID() == llvm::Intrinsic::dbg_addr ||
-                 func->getIntrinsicID() == llvm::Intrinsic::dbg_declare ||
-                 func->getIntrinsicID() == llvm::Intrinsic::dbg_label ||
-                 func->getIntrinsicID() == llvm::Intrinsic::dbg_value)) {
-            return true;
-    }
-    return false;
-}
 
 /// Return true if it is an intrinsic instruction
 inline bool isIntrinsicInst(const Instruction* inst)
 {
     if (const llvm::CallBase* call = llvm::dyn_cast<llvm::CallBase>(inst)) {
         const Function* func = call->getCalledFunction();
-        if (isIntrinsicFun(func)) {
+        if (func && (func->getIntrinsicID() == llvm::Intrinsic::donothing ||
+                     func->getIntrinsicID() == llvm::Intrinsic::dbg_addr ||
+                     func->getIntrinsicID() == llvm::Intrinsic::dbg_declare ||
+                     func->getIntrinsicID() == llvm::Intrinsic::dbg_label ||
+                     func->getIntrinsicID() == llvm::Intrinsic::dbg_value)) {
             return true;
         }
     }
@@ -190,25 +171,25 @@ inline CallSite getLLVMCallSite(const Instruction* inst)
 /// Get the corresponding Function based on its name
 inline const SVFFunction* getFunction(StringRef name)
 {
-    Function* fun = nullptr;
+    Function* fun = NULL;
     LLVMModuleSet* llvmModuleset = LLVMModuleSet::getLLVMModuleSet();
 
     for (u32_t i = 0; i < llvmModuleset->getModuleNum(); ++i)
     {
         Module *mod = llvmModuleset->getModule(i);
         fun = mod->getFunction(name);
-        if(fun)
+        if(fun && !fun->isDeclaration())
         {
             return llvmModuleset->getSVFFunction(fun);
         }
     }
-    return nullptr;
+    return NULL;
 }
 
 /// Get the definition of a function across multiple modules
 inline const SVFFunction* getDefFunForMultipleModule(const Function* fun)
 {
-    if(fun == nullptr) return nullptr;
+    if(fun == NULL) return NULL;
     LLVMModuleSet* llvmModuleset = LLVMModuleSet::getLLVMModuleSet();
     const SVFFunction* svfFun = llvmModuleset->getSVFFunction(fun);
     if (fun->isDeclaration() && llvmModuleset->hasDefinition(fun))
@@ -228,7 +209,7 @@ inline const SVFFunction* getCallee(const CallSite cs)
 inline const SVFFunction* getCallee(const Instruction *inst)
 {
     if (!isCallSite(inst))
-        return nullptr;
+        return NULL;
     CallSite cs(const_cast<Instruction*>(inst));
     return getCallee(cs);
 }
@@ -238,7 +219,6 @@ inline const SVFFunction* getCallee(const Instruction *inst)
 //@{
 std::string  getSourceLoc(const Value *val);
 std::string  getSourceLocOfFunction(const Function *F);
-const std::string value2String(const Value* value);
 //@}
 
 } // End namespace SVFUtil

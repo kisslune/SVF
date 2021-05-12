@@ -87,7 +87,7 @@ void SaberSVFGBuilder::collectGlobals(BVDataPTAImpl* pta)
         NodeID id = worklist.back();
         worklist.pop_back();
         globs.set(id);
-        const PointsTo& pts = pta->getPts(id);
+        PointsTo& pts = pta->getPts(id);
         for(PointsTo::iterator it = pts.begin(), eit = pts.end(); it!=eit; ++it)
         {
             globs |= CollectPtsChain(pta,*it,cachedPtsMap);
@@ -115,7 +115,7 @@ NodeBS& SaberSVFGBuilder::CollectPtsChain(BVDataPTAImpl* pta,NodeID id, NodeToPT
         while(!worklist.empty())
         {
             NodeID nodeId = worklist.pop();
-            const PointsTo& tmp = pta->getPts(nodeId);
+            PointsTo& tmp = pta->getPts(nodeId);
             for(PointsTo::iterator it = tmp.begin(), eit = tmp.end(); it!=eit; ++it)
             {
                 pts |= CollectPtsChain(pta,*it,cachedPtsMap);
@@ -152,9 +152,9 @@ void SaberSVFGBuilder::rmDerefDirSVFGEdges(BVDataPTAImpl* pta)
             if(SVFUtil::isa<StoreSVFGNode>(stmtNode))
             {
                 const SVFGNode* def = svfg->getDefSVFGNode(stmtNode->getPAGDstNode());
-                SVFGEdge* edge = svfg->getIntraVFGEdge(def,stmtNode,SVFGEdge::IntraDirectVF);
-                assert(edge && "Edge not found!");
-                svfg->removeSVFGEdge(edge);
+                SVFGEdge* edge = svfg->getSVFGEdge(def,stmtNode,SVFGEdge::IntraDirectVF);
+                if (edge)
+                    svfg->removeSVFGEdge(edge);
 
                 if(accessGlobal(pta,stmtNode->getPAGDstNode()))
                 {
@@ -164,9 +164,9 @@ void SaberSVFGBuilder::rmDerefDirSVFGEdges(BVDataPTAImpl* pta)
             else if(SVFUtil::isa<LoadSVFGNode>(stmtNode))
             {
                 const SVFGNode* def = svfg->getDefSVFGNode(stmtNode->getPAGSrcNode());
-                SVFGEdge* edge = svfg->getIntraVFGEdge(def,stmtNode,SVFGEdge::IntraDirectVF);
-                assert(edge && "Edge not found!");
-                svfg->removeSVFGEdge(edge);
+                SVFGEdge* edge = svfg->getSVFGEdge(def,stmtNode,SVFGEdge::IntraDirectVF);
+                if (edge)
+                    svfg->removeSVFGEdge(edge);
 
                 if(accessGlobal(pta,stmtNode->getPAGSrcNode()))
                 {

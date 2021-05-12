@@ -43,7 +43,7 @@ namespace SVF
 class AndersenSCD : public Andersen
 {
 public:
-    typedef Map<NodeID, NodeID> NodeToNodeMap;
+    typedef DenseMap<NodeID, NodeID> NodeToNodeMap;
 
 protected:
     static AndersenSCD* scdAndersen;
@@ -72,7 +72,7 @@ public:
     {
         if (scdAndersen)
             delete scdAndersen;
-        scdAndersen = nullptr;
+        scdAndersen = NULL;
     }
 
 protected:
@@ -101,9 +101,9 @@ protected:
 class AndersenSFR : public AndersenSCD
 {
 public:
-    typedef Map<NodeID, NodeBS> NodeStrides;
-    typedef Map<NodeID, NodeSet> FieldReps;
-    typedef Map<NodeID, pair<NodeID, NodeSet>> SFRTrait;
+    typedef DenseMap<NodeID, NodeBS> NodeStrides;
+    typedef DenseMap<NodeID, NodeSet> FieldReps;
+    typedef DenseMap<NodeID, pair<NodeID, NodeSet>> SFRTrait;
 
 private:
     static AndersenSFR* sfrAndersen;
@@ -114,7 +114,7 @@ private:
 
 public:
     AndersenSFR(PAG* _pag, PTATY type = AndersenSFR_WPA) :
-        AndersenSCD(_pag, type), csc(nullptr)
+        AndersenSCD(_pag, type), csc(NULL)
     {
     }
 
@@ -138,10 +138,10 @@ public:
 
     ~AndersenSFR()
     {
-        if (csc != nullptr)
+        if (csc != NULL)
         {
             delete(csc);
-            csc = nullptr;
+            csc = NULL;
         }
     }
 

@@ -49,12 +49,12 @@ class SrcSnkDDA : public CFLSrcSnkSolver
 
 public:
     typedef ProgSlice::SVFGNodeSet SVFGNodeSet;
-    typedef Map<const SVFGNode*,ProgSlice*> SVFGNodeToSliceMap;
-    typedef SVFGNodeSet::const_iterator SVFGNodeSetIter;
+    typedef std::map<const SVFGNode*,ProgSlice*> SVFGNodeToSliceMap;
+    typedef SVFGNodeSet::iterator SVFGNodeSetIter;
     typedef CxtDPItem DPIm;
-    typedef Set<DPIm> DPImSet;							///< dpitem set
-    typedef Map<const SVFGNode*, DPImSet> SVFGNodeToDPItemsMap; 	///< map a SVFGNode to its visited dpitems
-    typedef Set<const CallBlockNode*> CallSiteSet;
+    typedef std::set<DPIm> DPImSet;							///< dpitem set
+    typedef std::map<const SVFGNode*, DPImSet> SVFGNodeToDPItemsMap; 	///< map a SVFGNode to its visited dpitems
+    typedef std::set<const CallBlockNode*> CallSiteSet;
     typedef NodeBS SVFGNodeBS;
     typedef ProgSlice::VFWorkList WorkList;
 
@@ -74,29 +74,29 @@ protected:
 public:
 
     /// Constructor
-    SrcSnkDDA() : _curSlice(nullptr), svfg(nullptr), ptaCallGraph(nullptr)
+    SrcSnkDDA() : _curSlice(NULL), svfg(NULL), ptaCallGraph(NULL)
     {
         pathCondAllocator = new PathCondAllocator();
     }
     /// Destructor
     virtual ~SrcSnkDDA()
     {
-        if (svfg != nullptr)
+        if (svfg != NULL)
             delete svfg;
-        svfg = nullptr;
+        svfg = NULL;
 
-        if (_curSlice != nullptr)
+        if (_curSlice != NULL)
             delete _curSlice;
-        _curSlice = nullptr;
+        _curSlice = NULL;
 
         /// the following shared by multiple checkers, thus can not be released.
-        //if (ptaCallGraph != nullptr)
+        //if (ptaCallGraph != NULL)
         //    delete ptaCallGraph;
-        //ptaCallGraph = nullptr;
+        //ptaCallGraph = NULL;
 
         //if(pathCondAllocator)
         //    delete pathCondAllocator;
-        //pathCondAllocator = nullptr;
+        //pathCondAllocator = NULL;
     }
 
     /// Start analysis here
@@ -136,7 +136,7 @@ public:
     }
     /// Slice operations
     //@{
-    virtual void setCurSlice(const SVFGNode* src);
+    void setCurSlice(const SVFGNode* src);
 
     inline ProgSlice* getCurSlice() const
     {
@@ -253,7 +253,7 @@ protected:
     //@{
     inline bool forwardVisited(const SVFGNode* node, const DPIm& item)
     {
-        SVFGNodeToDPItemsMap::const_iterator it = nodeToDPItemsMap.find(node);
+        SVFGNodeToDPItemsMap::iterator it = nodeToDPItemsMap.find(node);
         if(it!=nodeToDPItemsMap.end())
             return it->second.find(item)!=it->second.end();
         else

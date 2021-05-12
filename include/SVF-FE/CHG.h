@@ -82,7 +82,7 @@ public:
     typedef std::vector<const SVFFunction*> FuncVector;
 
     CHNode (const std::string name, NodeID i = 0, GNodeK k = 0):
-        GenericCHNodeTy(i, k), vtable(nullptr), className(name), flags(0)
+        GenericCHNodeTy(i, k), vtable(NULL), className(name), flags(0)
     {
     }
     ~CHNode()
@@ -168,7 +168,7 @@ private:
      *
      * virtualFunctionVectors = {{Af1, Af2, ...}, {Bg1, Bg2, ...}}
      */
-    std::vector<FuncVector> virtualFunctionVectors;
+    std::vector<std::vector<const SVFFunction*>> virtualFunctionVectors;
 };
 
 /// class hierarchy graph
@@ -176,12 +176,12 @@ typedef GenericGraph<CHNode,CHEdge> GenericCHGraphTy;
 class CHGraph: public CommonCHGraph, public GenericCHGraphTy
 {
 public:
-    typedef Set<const CHNode*> CHNodeSetTy;
+    typedef DenseSet<const CHNode*> CHNodeSetTy;
     typedef FIFOWorkList<const CHNode*> WorkList;
-    typedef Map<std::string, CHNodeSetTy> NameToCHNodesMap;
-    typedef Map<CallSite, CHNodeSetTy> CallSiteToCHNodesMap;
-    typedef Map<CallSite, VTableSet> CallSiteToVTableSetMap;
-    typedef Map<CallSite, VFunSet> CallSiteToVFunSetMap;
+    typedef std::map<std::string, CHNodeSetTy> NameToCHNodesMap;
+    typedef DenseMap<CallSite, CHNodeSetTy> CallSiteToCHNodesMap;
+    typedef DenseMap<CallSite, VTableSet> CallSiteToVTableSetMap;
+    typedef DenseMap<CallSite, VFunSet> CallSiteToVFunSetMap;
 
     typedef enum
     {
@@ -216,12 +216,11 @@ public:
     const CHNodeSetTy& getCSClasses(CallSite cs);
     void getVFnsFromVtbls(CallSite cs, const VTableSet &vtbls, VFunSet &virtualFunctions) override;
     void dump(const std::string& filename);
-    void view();
     void printCH();
 
     inline s32_t getVirtualFunctionID(const SVFFunction* vfn) const
     {
-        Map<const SVFFunction*, s32_t>::const_iterator it =
+        DenseMap<const SVFFunction*, s32_t>::const_iterator it =
             virtualFunctionToIDMap.find(vfn);
         if (it != virtualFunctionToIDMap.end())
             return it->second;
@@ -230,14 +229,14 @@ public:
     }
     inline const SVFFunction* getVirtualFunctionBasedonID(s32_t id) const
     {
-        Map<const SVFFunction*, s32_t>::const_iterator it, eit;
+        DenseMap<const SVFFunction*, s32_t>::const_iterator it, eit;
         for (it = virtualFunctionToIDMap.begin(), eit =
                     virtualFunctionToIDMap.end(); it != eit; ++it)
         {
             if (it->second == id)
                 return it->first;
         }
-        return nullptr;
+        return NULL;
     }
 
     inline void addInstances(const std::string templateName, CHNode* node)
@@ -286,22 +285,19 @@ public:
         return chg->getKind() == Standard;
     }
 
-protected:
-    void addFuncToFuncVector(CHNode::FuncVector &v, const SVFFunction *f);
-
 private:
     SVFModule* svfMod;
     u32_t classNum;
     s32_t vfID;
     double buildingCHGTime;
-    Map<std::string, CHNode *> classNameToNodeMap;
+    std::map<const std::string, CHNode *> classNameToNodeMap;
     NameToCHNodesMap classNameToDescendantsMap;
     NameToCHNodesMap classNameToAncestorsMap;
     NameToCHNodesMap classNameToInstAndDescsMap;
     NameToCHNodesMap templateNameToInstancesMap;
     CallSiteToCHNodesMap csToClassesMap;
 
-    Map<const SVFFunction*, s32_t> virtualFunctionToIDMap;
+    DenseMap<const SVFFunction*, s32_t> virtualFunctionToIDMap;
     CallSiteToVTableSetMap csToCHAVtblsMap;
     CallSiteToVFunSetMap csToCHAVFnsMap;
 };

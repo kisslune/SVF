@@ -33,7 +33,6 @@
 
 #include "PAGEdge.h"
 #include "PAGNode.h"
-#include "Util/NodeIDAllocator.h"
 #include "Util/SVFUtil.h"
 #include "Graphs/ICFG.h"
 
@@ -48,34 +47,34 @@ class PAG : public GenericGraph<PAGNode,PAGEdge>
 {
 
 public:
-    typedef Set<const CallBlockNode*> CallSiteSet;
-    typedef OrderedMap<const CallBlockNode*,NodeID> CallSiteToFunPtrMap;
-    typedef Map<NodeID,CallSiteSet> FunPtrToCallSitesMap;
-    typedef Map<NodeID,NodeBS> MemObjToFieldsMap;
-    typedef Set<const PAGEdge*> PAGEdgeSet;
+    typedef DenseSet<const CallBlockNode*> CallSiteSet;
+    typedef DenseMap<const CallBlockNode*,NodeID> CallSiteToFunPtrMap;
+    typedef DenseMap<NodeID,CallSiteSet> FunPtrToCallSitesMap;
+    typedef DenseMap<NodeID,NodeBS> MemObjToFieldsMap;
+    typedef DenseSet<const PAGEdge*> PAGEdgeSet;
     typedef std::vector<const PAGEdge*> PAGEdgeList;
     typedef std::vector<const PAGNode*> PAGNodeList;
     typedef std::vector<const CopyPE*> CopyPEList;
     typedef std::vector<const BinaryOPPE*> BinaryOPList;
     typedef std::vector<const UnaryOPPE*> UnaryOPList;
     typedef std::vector<const CmpPE*> CmpPEList;
-    typedef Map<const PAGNode*,CopyPEList> PHINodeMap;
-    typedef Map<const PAGNode*,BinaryOPList> BinaryNodeMap;
-    typedef Map<const PAGNode*,UnaryOPList> UnaryNodeMap;
-    typedef Map<const PAGNode*,CmpPEList> CmpNodeMap;
-    typedef Map<const SVFFunction*,PAGNodeList> FunToArgsListMap;
-    typedef Map<const CallBlockNode*,PAGNodeList> CSToArgsListMap;
-    typedef Map<const RetBlockNode*,const PAGNode*> CSToRetMap;
-    typedef Map<const SVFFunction*,const PAGNode*> FunToRetMap;
-    typedef Map<const SVFFunction*,PAGEdgeSet> FunToPAGEdgeSetMap;
-    typedef Map<const ICFGNode*,PAGEdgeList> Inst2PAGEdgesMap;
-    typedef Map<NodeID, NodeID> NodeToNodeMap;
+    typedef DenseMap<const PAGNode*,CopyPEList> PHINodeMap;
+    typedef DenseMap<const PAGNode*,BinaryOPList> BinaryNodeMap;
+    typedef DenseMap<const PAGNode*,UnaryOPList> UnaryNodeMap;
+    typedef DenseMap<const PAGNode*,CmpPEList> CmpNodeMap;
+    typedef DenseMap<const SVFFunction*,PAGNodeList> FunToArgsListMap;
+    typedef DenseMap<const CallBlockNode*,PAGNodeList> CSToArgsListMap;
+    typedef DenseMap<const RetBlockNode*,const PAGNode*> CSToRetMap;
+    typedef DenseMap<const SVFFunction*,const PAGNode*> FunToRetMap;
+    typedef DenseMap<const SVFFunction*,PAGEdgeSet> FunToPAGEdgeSetMap;
+    typedef DenseMap<const ICFGNode*,PAGEdgeList> Inst2PAGEdgesMap;
+    typedef DenseMap<NodeID, NodeID> NodeToNodeMap;
     typedef std::pair<NodeID, Size_t> NodeOffset;
     typedef std::pair<NodeID, LocationSet> NodeLocationSet;
-    typedef Map<NodeOffset,NodeID> NodeOffsetMap;
-    typedef Map<NodeLocationSet,NodeID> NodeLocationSetMap;
-    typedef Map<const Value*, NodeLocationSetMap> GepValPNMap;
-    typedef Map<NodePair,NodeID> NodePairSetMap;
+    typedef DenseMap<NodeOffset,NodeID,DenseMapInfo<std::pair<NodeID,Size_t> > > NodeOffsetMap;
+    typedef std::map<NodeLocationSet,NodeID> NodeLocationSetMap;
+    typedef std::map<const Value*, NodeLocationSetMap> GepValPNMap;
+    typedef DenseMap<NodePair,NodeID> NodePairSetMap;
 
 private:
     SymbolTableInfo* symInfo;
@@ -103,7 +102,7 @@ private:
     bool fromFile; ///< Whether the PAG is built according to user specified data from a txt file
     /// Valid pointers for pointer analysis resolution connected by PAG edges (constraints)
     /// this set of candidate pointers can change during pointer resolution (e.g. adding new object nodes)
-    OrderedNodeSet candidatePointers;
+    NodeSet candidatePointers;
     NodeID nodeNumAfterPAGBuild; // initial node number after building PAG, excluding later added nodes, e.g., gepobj nodes
     ICFG* icfg; // ICFG
     CallSiteSet callSiteSet; /// all the callsites of a program
@@ -124,7 +123,7 @@ public:
     }
 
     /// Return valid pointers
-    inline OrderedNodeSet& getAllValidPtrs()
+    inline NodeSet& getAllValidPtrs()
     {
         return candidatePointers;
     }
@@ -147,7 +146,7 @@ public:
     //@{
     static inline PAG* getPAG(bool buildFromFile = false)
     {
-        if (pag == nullptr)
+        if (pag == NULL)
         {
             pag = new PAG(buildFromFile);
         }
@@ -157,7 +156,7 @@ public:
     {
         if (pag)
             delete pag;
-        pag = nullptr;
+        pag = NULL;
     }
     //@}
 
@@ -180,7 +179,7 @@ public:
     /// Get LLVM Module
     inline SVFModule* getModule()
     {
-        return SymbolTableInfo::SymbolInfo()->getModule();
+        return SymbolTableInfo::Symbolnfo()->getModule();
     }
     inline void addCallSite(const CallBlockNode* call)
     {
@@ -527,7 +526,7 @@ public:
     }
     /// Get memory object - Return memory object according to pag node id
     /// return whole allocated memory object if this node is a gep obj node
-    /// return nullptr is this node is not a ObjPN type
+    /// return NULL is this node is not a ObjPN type
     //@{
     inline const MemObj*getObject(NodeID id) const
     {
@@ -535,7 +534,7 @@ public:
         if(const ObjPN* objPN = SVFUtil::dyn_cast<ObjPN>(node))
             return getObject(objPN);
         else
-            return nullptr;
+            return NULL;
     }
     inline const MemObj*getObject(const ObjPN* node) const
     {
@@ -723,32 +722,32 @@ public:
     //@{
     inline NodeID addDummyValNode()
     {
-        return addDummyValNode(NodeIDAllocator::get()->allocateValueId());
+        return addDummyValNode(nodeNum);
     }
     inline NodeID addDummyValNode(NodeID i)
     {
-        return addValNode(nullptr, new DummyValPN(i), i);
+        return addValNode(NULL, new DummyValPN(i), i);
     }
-    inline NodeID addDummyObjNode(const Type* type = nullptr)
+    inline NodeID addDummyObjNode(const Type* type = NULL)
     {
-        return addDummyObjNode(NodeIDAllocator::get()->allocateObjectId(), type);
+        return addDummyObjNode(nodeNum, type);
     }
     inline NodeID addDummyObjNode(NodeID i, const Type* type)
     {
         const MemObj* mem = addDummyMemObj(i, type);
-        return addObjNode(nullptr, new DummyObjPN(i,mem), i);
+        return addObjNode(NULL, new DummyObjPN(i,mem), i);
     }
     inline const MemObj* addDummyMemObj(NodeID i, const Type* type)
     {
-        return SymbolTableInfo::SymbolInfo()->createDummyObj(i,type);
+        return SymbolTableInfo::Symbolnfo()->createDummyObj(i,type);
     }
     inline NodeID addBlackholeObjNode()
     {
-        return addObjNode(nullptr, new DummyObjPN(getBlackHoleNode(),getBlackHoleObj()), getBlackHoleNode());
+        return addObjNode(NULL, new DummyObjPN(getBlackHoleNode(),getBlackHoleObj()), getBlackHoleNode());
     }
     inline NodeID addConstantObjNode()
     {
-        return addObjNode(nullptr, new DummyObjPN(getConstantNode(),getConstantObj()), getConstantNode());
+        return addObjNode(NULL, new DummyObjPN(getConstantNode(),getConstantObj()), getConstantNode());
     }
     inline NodeID addBlackholePtrNode()
     {
@@ -841,9 +840,6 @@ public:
 
     /// Dump PAG
     void dump(std::string name);
-
-    /// View graph from the debugger
-    void view();
 
 };
 

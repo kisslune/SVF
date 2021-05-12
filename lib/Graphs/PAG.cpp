@@ -27,7 +27,6 @@
  *      Author: Yulei Sui
  */
 
-#include "Util/Options.h"
 #include "Graphs/PAG.h"
 #include "SVF-FE/LLVMUtil.h"
 #include "SVF-FE/ICFGBuilder.h"
@@ -35,12 +34,18 @@
 using namespace SVF;
 using namespace SVFUtil;
 
+static llvm::cl::opt<bool> HANDBLACKHOLE("blk", llvm::cl::init(false),
+        llvm::cl::desc("Hanle blackhole edge"));
+
+static llvm::cl::opt<bool> FirstFieldEqBase("ff-eq-base", llvm::cl::init(true),
+        llvm::cl::desc("Treat base objects as their first fields"));
+
 
 u64_t PAGEdge::callEdgeLabelCounter = 0;
 u64_t PAGEdge::storeEdgeLabelCounter = 0;
 PAGEdge::Inst2LabelMap PAGEdge::inst2LabelMap;
 
-PAG* PAG::pag = nullptr;
+PAG* PAG::pag = NULL;
 
 
 const std::string PAGNode::toString() const {
@@ -50,57 +55,14 @@ const std::string PAGNode::toString() const {
     return rawstr.str();
 }
 
-/// Get shape and/or color of node for .dot display.
-const std::string PAGNode::getNodeAttrForDotDisplay() const {
-    // TODO: Maybe use over-rides instead of these ifs,
-    // But this puts them conveniently together.
-    if (SVFUtil::isa<ValPN>(this))
-    {
-        if(SVFUtil::isa<GepValPN>(this))
-            return "shape=hexagon";
-        else if (SVFUtil::isa<DummyValPN>(this))
-            return "shape=diamond";
-        else
-            return "shape=box";
-    }
-    else if (SVFUtil::isa<ObjPN>(this))
-    {
-        if(SVFUtil::isa<GepObjPN>(this))
-            return "shape=doubleoctagon";
-        else if(SVFUtil::isa<FIObjPN>(this))
-            return "shape=box3d";
-        else if (SVFUtil::isa<DummyObjPN>(this))
-            return "shape=tab";
-        else
-            return "shape=component";
-    }
-    else if (SVFUtil::isa<RetPN>(this))
-    {
-        return "shape=Mrecord";
-    }
-    else if (SVFUtil::isa<VarArgPN>(this))
-    {
-        return "shape=octagon";
-    }
-    else
-    {
-        assert(0 && "no such kind!!");
-    }
-    return "";
-}
-
-void PAGNode::dump() const {
-    outs() << this->toString() << "\n";
-}
-
 const std::string ValPN::toString() const {
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "ValPN ID: " << getId();
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
+    if(value){
+        rawstr << " " << *value << " ";
+        rawstr << getSourceLoc(value);
     }
-    rawstr << value2String(value);
     return rawstr.str();
 }
 
@@ -108,10 +70,10 @@ const std::string ObjPN::toString() const {
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "ObjPN ID: " << getId();
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
+    if(value){
+        rawstr << " " << *value << " ";
+        rawstr << getSourceLoc(value);
     }
-    rawstr << value2String(value);
     return rawstr.str();
 }
 
@@ -119,21 +81,22 @@ const std::string GepValPN::toString() const {
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "GepValPN ID: " << getId() << " with offset_" + llvm::utostr(getOffset());
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
+    if(value){
+        rawstr << " " << *value << " ";
+        rawstr << getSourceLoc(value);
     }
-    rawstr << value2String(value);
     return rawstr.str();
 }
+
 
 const std::string GepObjPN::toString() const {
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "GepObjPN ID: " << getId() << " with offset_" + llvm::itostr(ls.getOffset());
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
+    if(value){
+        rawstr << " " << *value << " ";
+        rawstr << getSourceLoc(value);
     }
-    rawstr << value2String(value);
     return rawstr.str();
 }
 
@@ -141,10 +104,10 @@ const std::string FIObjPN::toString() const {
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "FIObjPN ID: " << getId() << " (base object)";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
+    if(value){
+        rawstr << " " << *value << " ";
+        rawstr << getSourceLoc(value);
     }
-    rawstr << value2String(value);
     return rawstr.str();
 }
 
@@ -208,10 +171,8 @@ const std::string AddrPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "AddrPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -219,10 +180,8 @@ const std::string CopyPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "CopyPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -230,10 +189,8 @@ const std::string CmpPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "CmpPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -241,10 +198,8 @@ const std::string BinaryOPPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "BinaryOPPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -252,10 +207,8 @@ const std::string UnaryOPPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "UnaryOPPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -263,10 +216,8 @@ const std::string LoadPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "LoadPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -274,10 +225,8 @@ const std::string StorePE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "StorePE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -285,21 +234,17 @@ const std::string GepPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "GepPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
 const std::string NormalGepPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
-    rawstr << "NormalGepPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    rawstr << "VariantGepPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -307,10 +252,8 @@ const std::string VariantGepPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "VariantGepPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -318,10 +261,8 @@ const std::string CallPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "CallPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -329,10 +270,8 @@ const std::string RetPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "RetPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -340,10 +279,8 @@ const std::string TDForkPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "TDForkPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
@@ -351,17 +288,15 @@ const std::string TDJoinPE::toString() const{
     std::string str;
     raw_string_ostream rawstr(str);
     rawstr << "TDJoinPE: [" << getDstID() << "<--" << getSrcID() << "]\t";
-    if (Options::PAGDotGraphShorter) {
-        rawstr << "\n";
-    }
-    rawstr << value2String(getValue());
+    if(getValue())
+        rawstr << *getValue() << getSourceLoc(getValue());
     return rawstr.str();
 }
 
 
 PAG::PAG(bool buildFromFile) : fromFile(buildFromFile), nodeNumAfterPAGBuild(0), totalPTAPAGEdge(0)
 {
-    symInfo = SymbolTableInfo::SymbolInfo();
+    symInfo = SymbolTableInfo::Symbolnfo();
     icfg = new ICFG();
     ICFGBuilder builder(icfg);
     builder.build(getModule());
@@ -527,7 +462,7 @@ RetPE* PAG::addRetPE(NodeID src, NodeID dst, const CallBlockNode* cs)
  */
 PAGEdge* PAG::addBlackHoleAddrPE(NodeID node)
 {
-    if(Options::HandBlackHole)
+    if(HANDBLACKHOLE)
         return pag->addAddrPE(pag->getBlackHoleNode(), node);
     else
         return pag->addCopyPE(pag->getNullPtr(), node);
@@ -672,14 +607,14 @@ NodeID PAG::getGepObjNode(const MemObj* obj, const LocationSet& ls)
 {
     NodeID base = getObjectNode(obj);
 
+    // Base and first field are the same memory location.
+    if (FirstFieldEqBase && ls.getOffset() == 0) return base;
+
     /// if this obj is field-insensitive, just return the field-insensitive node.
     if (obj->isFieldInsensitive())
         return getFIObjNode(obj);
 
-    LocationSet newLS = SymbolTableInfo::SymbolInfo()->getModulusOffset(obj,ls);
-
-    // Base and first field are the same memory location.
-    if (Options::FirstFieldEqBase && newLS.getOffset() == 0) return base;
+    LocationSet newLS = SymbolTableInfo::Symbolnfo()->getModulusOffset(obj,ls);
 
     NodeLocationSetMap::iterator iter = GepObjNodeMap.find(std::make_pair(base, newLS));
     if (iter == GepObjNodeMap.end())
@@ -699,7 +634,16 @@ NodeID PAG::addGepObjNode(const MemObj* obj, const LocationSet& ls)
     assert(0==GepObjNodeMap.count(std::make_pair(base, ls))
            && "this node should not be created before");
 
-    NodeID gepId = NodeIDAllocator::get()->allocateGepObjectId(base, ls.getOffset(), StInfo::getMaxFieldLimit());
+    //for a gep id, base id is set at lower bits, and offset is set at higher bits
+    //e.g. 1100050 denotes base=50 and offset=10
+    // The offset is 10, not 11, because we add 1 to the offset to ensure that the
+    // high bits are never 0. For example, we do not want the gep id to be 50 when
+    // the base is 50 and the offset is 0.
+    NodeID gepMultiplier = pow(10, ceil(log10(
+                                            getNodeNumAfterPAGBuild() > StInfo::getMaxFieldLimit() ?
+                                            getNodeNumAfterPAGBuild() : StInfo::getMaxFieldLimit()
+                                        )));
+    NodeID gepId = (ls.getOffset() + 1) * gepMultiplier + base;
     GepObjNodeMap[std::make_pair(base, ls)] = gepId;
     GepObjPN *node = new GepObjPN(obj, gepId, ls);
     memToFieldsMap[base].set(gepId);
@@ -730,7 +674,7 @@ PAGEdge* PAG::hasNonlabeledEdge(PAGNode* src, PAGNode* dst, PAGEdge::PEDGEK kind
     {
         return *it;
     }
-    return nullptr;
+    return NULL;
 }
 
 /*!
@@ -744,7 +688,7 @@ PAGEdge* PAG::hasLabeledEdge(PAGNode* src, PAGNode* dst, PAGEdge::PEDGEK kind, c
     {
         return *it;
     }
-    return nullptr;
+    return NULL;
 }
 
 
@@ -875,8 +819,8 @@ void PAG::destroy()
             delete *edgeIt;
         }
     }
-    SymbolTableInfo::releaseSymbolInfo();
-    symInfo = nullptr;
+    delete symInfo;
+    symInfo = NULL;
 }
 
 /*!
@@ -998,7 +942,7 @@ bool PAG::isValidTopLevelPtr(const PAGNode* node)
  * PAGEdge constructor
  */
 PAGEdge::PAGEdge(PAGNode* s, PAGNode* d, GEdgeFlag k) :
-    GenericPAGEdgeTy(s,d,k),value(nullptr),basicBlock(nullptr),icfgNode(nullptr)
+    GenericPAGEdgeTy(s,d,k),value(NULL),basicBlock(NULL),icfgNode(NULL)
 {
     edgeId = PAG::getPAG()->getTotalEdgeNum();
     PAG::getPAG()->incEdgeNum();
@@ -1026,7 +970,7 @@ PAGNode::PAGNode(const Value* val, NodeID i, PNODEK k) :
     case ValNode:
     case GepValNode:
     {
-        assert(val != nullptr && "value is nullptr for ValPN or GepValNode");
+        assert(val != NULL && "value is NULL for ValPN or GepValNode");
         isTLPointer = val->getType()->isPointerTy();
         isATPointer = false;
         break;
@@ -1034,7 +978,7 @@ PAGNode::PAGNode(const Value* val, NodeID i, PNODEK k) :
 
     case RetNode:
     {
-        assert(val != nullptr && "value is nullptr for RetNode");
+        assert(val != NULL && "value is NULL for RetNode");
         isTLPointer = SVFUtil::cast<Function>(val)->getReturnType()->isPointerTy();
         isATPointer = false;
         break;
@@ -1063,18 +1007,6 @@ PAGNode::PAGNode(const Value* val, NodeID i, PNODEK k) :
     }
 }
 
-bool PAGNode::isIsolatedNode() const{
-	if (getInEdges().empty() && getOutEdges().empty())
-		return true;
-	else if (isConstantData())
-		return true;
-	else if (value && SVFUtil::isa<Function>(value))
-		return SVFUtil::isIntrinsicFun(SVFUtil::cast<Function>(value));
-	else
-		return false;
-}
-
-
 /*!
  * Dump this PAG
  */
@@ -1083,20 +1015,13 @@ void PAG::dump(std::string name)
     GraphPrinter::WriteGraphToFile(outs(), name, this);
 }
 
-/*!
- * View PAG
- */
-void PAG::view()
-{
-    llvm::ViewGraph(this, "ProgramAssignmentGraph");
-}
 
 /*!
  * Whether to handle blackhole edge
  */
 void PAG::handleBlackHole(bool b)
 {
-    Options::HandBlackHole = b;
+    HANDBLACKHOLE = b;
 }
 
 namespace llvm
@@ -1121,27 +1046,39 @@ struct DOTGraphTraits<PAG*> : public DefaultDOTGraphTraits
         return graph->getGraphName();
     }
 
-    /// isNodeHidden - If the function returns true, the given node is not
-    /// displayed in the graph
-#if LLVM_VERSION_MAJOR >= 12
-	static bool isNodeHidden(PAGNode *node, PAG*) {
-#else
-    static bool isNodeHidden(PAGNode *node) {
-#endif
-		return node->isIsolatedNode();
-	}
-
     /// Return label of a VFG node with two display mode
     /// Either you can choose to display the name of the value or the whole instruction
     static std::string getNodeLabel(PAGNode *node, PAG*)
     {
+        bool briefDisplay = true;
+        bool nameDisplay = true;
         std::string str;
         raw_string_ostream rawstr(str);
         // print function info
         if (node->getFunction())
             rawstr << "[" << node->getFunction()->getName() << "] ";
 
-        rawstr << node->toString();
+        if (briefDisplay)
+        {
+            if (SVFUtil::isa<ValPN>(node))
+            {
+                if (nameDisplay)
+                    rawstr << node->getId() << ":" << node->getValueName();
+                else
+                    rawstr << node->getId();
+            }
+            else
+                rawstr << node->getId();
+        }
+        else
+        {
+            // print the whole value
+            if (!SVFUtil::isa<DummyValPN>(node) && !SVFUtil::isa<DummyObjPN>(node))
+                rawstr << *node->getValue();
+            else
+                rawstr << "";
+
+        }
 
         return rawstr.str();
 
@@ -1149,7 +1086,39 @@ struct DOTGraphTraits<PAG*> : public DefaultDOTGraphTraits
 
     static std::string getNodeAttributes(PAGNode *node, PAG*)
     {
-        return node->getNodeAttrForDotDisplay();
+        if (SVFUtil::isa<ValPN>(node))
+        {
+            if(SVFUtil::isa<GepValPN>(node))
+                return "shape=hexagon";
+            else if (SVFUtil::isa<DummyValPN>(node))
+                return "shape=diamond";
+            else
+                return "shape=circle";
+        }
+        else if (SVFUtil::isa<ObjPN>(node))
+        {
+            if(SVFUtil::isa<GepObjPN>(node))
+                return "shape=doubleoctagon";
+            else if(SVFUtil::isa<FIObjPN>(node))
+                return "shape=septagon";
+            else if (SVFUtil::isa<DummyObjPN>(node))
+                return "shape=Mcircle";
+            else
+                return "shape=doublecircle";
+        }
+        else if (SVFUtil::isa<RetPN>(node))
+        {
+            return "shape=Mrecord";
+        }
+        else if (SVFUtil::isa<VarArgPN>(node))
+        {
+            return "shape=octagon";
+        }
+        else
+        {
+            assert(0 && "no such kind node!!");
+        }
+        return "";
     }
 
     template<class EdgeIter>
@@ -1205,9 +1174,10 @@ struct DOTGraphTraits<PAG*> : public DefaultDOTGraphTraits
         {
             return "color=black,style=dotted";
         }
-
-        assert(false && "No such kind edge!!");
-        exit(1);
+        else
+        {
+            assert(0 && "No such kind edge!!");
+        }
     }
 
     template<class EdgeIter>

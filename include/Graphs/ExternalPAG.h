@@ -24,28 +24,28 @@ class ExternalPAG
 private:
     /// Maps function names to the entry nodes of the extpag which implements
     /// it. This is to connect arguments and callsites.
-    static Map<const SVFFunction*, Map<int, PAGNode *>>
+    static DenseMap<const SVFFunction*, DenseMap<int, PAGNode *>>
             functionToExternalPAGEntries;
-    static Map<const SVFFunction*, PAGNode *> functionToExternalPAGReturns;
+    static DenseMap<const SVFFunction*, PAGNode *> functionToExternalPAGReturns;
 
     /// Name of the function this external PAG represents.
     std::string functionName;
 
     /// Value nodes in this external PAG, represented by NodeIDs
     /// because we will rebuild these nodes in the main PAG.
-    NodeSet valueNodes;
+    DenseNodeSet valueNodes;
     /// Object nodes in this external PAG, represented by NodeIDs
     /// because we will rebuild these nodes in the main PAG.
-    NodeSet objectNodes;
+    DenseNodeSet objectNodes;
     /// Edges in this external PAG, represented by the parts of an Edge because
     /// we will rebuild these edges in the main PAG.
-    OrderedSet<std::tuple<NodeID, NodeID, std::string, int>> edges;
+    std::set<std::tuple<NodeID, NodeID, std::string, int>>edges;
 
     // Special nodes.
 
     /// Nodes in the ExternalPAG which call edges should connect to.
     /// argNodes[0] is arg 0, argNodes[1] is arg 1, ...
-    Map<int, NodeID> argNodes;
+    DenseMap<int, NodeID> argNodes;
     /// Node from which return edges connect.
     NodeID returnNode;
 
@@ -101,20 +101,20 @@ public:
         return functionName;
     }
 
-    NodeSet &getValueNodes()
+    DenseNodeSet &getValueNodes()
     {
         return valueNodes;
     }
-    NodeSet &getObjectNodes()
+    DenseNodeSet &getObjectNodes()
     {
         return objectNodes;
     }
-    OrderedSet<std::tuple<NodeID, NodeID, std::string, int>> &getEdges()
+    std::set<std::tuple<NodeID, NodeID, std::string, int>> &getEdges()
     {
         return edges;
     }
 
-    Map<int, NodeID> &getArgNodes()
+    DenseMap<int, NodeID> &getArgNodes()
     {
         return argNodes;
     }

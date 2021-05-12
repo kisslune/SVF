@@ -33,28 +33,28 @@ public:
     virtual ~ContextDDA();
 
     /// Initialization of the analysis
-    virtual void initialize() override;
+    virtual void initialize();
 
     /// Finalize analysis
-    virtual inline void finalize() override
+    virtual inline void finalize()
     {
         CondPTAImpl<ContextCond>::finalize();
     }
 
     /// dummy analyze method
-    virtual void analyze() override {}
+    virtual void analyze() {}
 
     /// Compute points-to set for an unconditional pointer
-    virtual void computeDDAPts(NodeID id) override;
+    void computeDDAPts(NodeID id);
 
     /// Compute points-to set for a context-sensitive pointer
-    virtual const CxtPtSet& computeDDAPts(const CxtVar& cxtVar);
+    const CxtPtSet& computeDDAPts(const CxtVar& cxtVar);
 
     /// Handle out-of-budget dpm
     void handleOutOfBudgetDpm(const CxtLocDPItem& dpm);
 
     /// Override parent method
-    virtual CxtPtSet getConservativeCPts(const CxtLocDPItem& dpm) override
+    CxtPtSet getConservativeCPts(const CxtLocDPItem& dpm)
     {
         const PointsTo& pts =  getAndersenAnalysis()->getPts(dpm.getCurNodeID());
         CxtPtSet tmpCPts;
@@ -68,17 +68,17 @@ public:
     }
 
     /// Override parent method
-    virtual inline NodeID getPtrNodeID(const CxtVar& var) const override
+    virtual inline NodeID getPtrNodeID(const CxtVar& var) const
     {
         return var.get_id();
     }
     /// Handle condition for context or path analysis (backward analysis)
-    virtual bool handleBKCondition(CxtLocDPItem& dpm, const SVFGEdge* edge) override;
+    virtual bool handleBKCondition(CxtLocDPItem& dpm, const SVFGEdge* edge);
 
     /// we exclude concrete heap given the following conditions:
     /// (1) concrete calling context (not involved in recursion and not exceed the maximum context limit)
     /// (2) not inside loop
-    virtual bool isHeapCondMemObj(const CxtVar& var, const StoreSVFGNode* store) override;
+    bool isHeapCondMemObj(const CxtVar& var, const StoreSVFGNode* store);
 
     /// refine indirect call edge
     bool testIndCallReachability(CxtLocDPItem& dpm, const SVFFunction* callee, const CallBlockNode* cs);
@@ -110,7 +110,7 @@ public:
     }
     /// Update call graph.
     //@{
-    virtual void updateCallGraphAndSVFG(const CxtLocDPItem& dpm,const CallBlockNode* cs,SVFGEdgeSet& svfgEdges) override
+    void updateCallGraphAndSVFG(const CxtLocDPItem& dpm,const CallBlockNode* cs,SVFGEdgeSet& svfgEdges)
     {
         CallEdgeMap newEdges;
         resolveIndCalls(cs, getBVPointsTo(getCachedPointsTo(dpm)), newEdges);
@@ -142,10 +142,10 @@ public:
     }
 
     /// processGep node
-    virtual CxtPtSet processGepPts(const GepSVFGNode* gep, const CxtPtSet& srcPts) override;
+    CxtPtSet processGepPts(const GepSVFGNode* gep, const CxtPtSet& srcPts);
 
     /// Handle Address SVFGNode to add proper conditional points-to
-    virtual void handleAddr(CxtPtSet& pts,const CxtLocDPItem& dpm,const AddrSVFGNode* addr) override
+    void handleAddr(CxtPtSet& pts,const CxtLocDPItem& dpm,const AddrSVFGNode* addr)
     {
         NodeID srcID = addr->getPAGSrcNodeID();
         /// whether this object is set field-insensitive during pre-analysis
@@ -159,7 +159,7 @@ public:
     }
 
     /// Propagate along indirect value-flow if two objects of load and store are same
-    virtual inline bool propagateViaObj(const CxtVar& storeObj, const CxtVar& loadObj) override
+    virtual inline bool propagateViaObj(const CxtVar& storeObj, const CxtVar& loadObj)
     {
         return isSameVar(storeObj,loadObj);
     }
@@ -167,7 +167,7 @@ public:
     /// Whether two call string contexts are compatible which may represent the same memory object
     /// compare with call strings from last few callsite ids (most recent ids to objects):
     /// compatible : (e.g., 123 == 123, 123 == 23). not compatible (e.g., 123 != 423)
-    virtual inline bool isCondCompatible(const ContextCond& cxt1, const ContextCond& cxt2, bool singleton) const override;
+    inline bool isCondCompatible(const ContextCond& cxt1, const ContextCond& cxt2, bool singleton) const;
 
     /// Whether this edge is treated context-insensitively
     bool isInsensitiveCallRet(const SVFGEdge* edge)
@@ -185,7 +185,7 @@ public:
         SVFUtil::outs() << cxts.toString() << "\n";
     }
 
-    virtual const std::string PTAName() const override
+    virtual const std::string PTAName() const
     {
         return "Context Sensitive DDA";
     }

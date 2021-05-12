@@ -54,7 +54,7 @@ protected:
 
     /*
      * Get the previous LoadInst or StoreInst from Instruction "I" in the
-     * same BasicBlock. Return nullptr if none exists.
+     * same BasicBlock. Return NULL if none exists.
      */
     const Instruction *getPreviousMemoryAccessInst(const Instruction *I);
 
@@ -113,12 +113,12 @@ protected:
 
 private:
 
-    Map<NodeID, const CallInst*> csnumToInstMap;
-    Map<NodeID, CallStrCxt> vthdToCxt;
-    Map<NodeID, NodeID> vthdTorthd;
-    Map<NodeID, NodeID> rthdTovthd;
+    std::map<NodeID, const CallInst*> csnumToInstMap;
+    std::map<NodeID, CallStrCxt> vthdToCxt;
+    std::map<NodeID, NodeID> vthdTorthd;
+    std::map<NodeID, NodeID> rthdTovthd;
 
-    Map<NodeID, Set<NodeID>> rthdToChildren;
+    std::map<NodeID, std::set<NodeID>> rthdToChildren;
 
     MHP::InstToThreadStmtSetMap instToTSMap; // Map a instruction to CxtThreadStmtSet
     MHP::ThreadStmtToThreadInterleav threadStmtToInterLeaving; /// Map a statement to its thread interleavings
@@ -385,7 +385,7 @@ private:
     /*!
      * Get the previous LoadInst or StoreInst from Instruction "I" in the
      * same BasicBlock.
-     * Return nullptr if none exists.
+     * Return NULL if none exists.
      */
     const Instruction *getPreviousMemoryAccessInst(
         const Instruction *I)
@@ -403,7 +403,7 @@ private:
             }
             I = I->getPrevNode();
         }
-        return nullptr;
+        return NULL;
     }
 
     /// Constant RC_FLAG values

@@ -5,7 +5,6 @@
  *      Author: Yulei Sui, Peng Di
  */
 
-#include "Util/Options.h"
 #include "MTA/PCG.h"
 #include "Util/SVFUtil.h"
 
@@ -31,7 +30,7 @@ bool PCG::analyze()
 
     //interferenceAnalysis();
 
-    //if (Options::TDPrint) {
+    //if (TDPrint) {
     //printResults();
     //tdAPI->performAPIStat(mod);
     //}
@@ -192,7 +191,7 @@ void PCG::identifyFollowers()
     {
         const Instruction* inst = *sit;
         BBWorkList bb_worklist;
-        Set<const BasicBlock*> visitedBBs;
+        std::set<const BasicBlock*> visitedBBs;
         bb_worklist.push(inst->getParent());
         while (!bb_worklist.empty())
         {

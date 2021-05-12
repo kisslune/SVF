@@ -88,7 +88,7 @@ public:
     /// Return a static reference
     static SaberCheckerAPI* getCheckerAPI()
     {
-        if(ckAPI == nullptr)
+        if(ckAPI == NULL)
         {
             ckAPI = new SaberCheckerAPI();
         }

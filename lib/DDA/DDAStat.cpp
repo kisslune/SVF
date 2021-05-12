@@ -15,11 +15,11 @@
 using namespace SVF;
 using namespace SVFUtil;
 
-DDAStat::DDAStat(FlowDDA* pta) : PTAStat(pta), flowDDA(pta), contextDDA(nullptr)
+DDAStat::DDAStat(FlowDDA* pta) : PTAStat(pta), flowDDA(pta), contextDDA(NULL)
 {
     initDefault();
 }
-DDAStat::DDAStat(ContextDDA* pta) : PTAStat(pta), flowDDA(nullptr), contextDDA(pta)
+DDAStat::DDAStat(ContextDDA* pta) : PTAStat(pta), flowDDA(NULL), contextDDA(pta)
 {
     initDefault();
 }

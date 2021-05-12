@@ -29,14 +29,14 @@ public:
     typedef PointerAnalysis::CallSiteSet CallSiteSet;
     typedef PointerAnalysis::CallEdgeMap CallEdgeMap;
     typedef PointerAnalysis::FunctionSet FunctionSet;
-    typedef Set<const SVFGNode*> SVFGNodeSet;
+    typedef std::set<const SVFGNode*> SVFGNodeSet;
     typedef std::vector<const SVFGNode*> SVFGNodeVec;
     typedef NodeBS SVFGNodeIDSet;
-    typedef Set<const Instruction*> InstSet;
+    typedef std::set<const Instruction*> InstSet;
     typedef std::pair<NodeID,NodeID> NodeIDPair;
 
     typedef std::pair<const StmtSVFGNode*, LockAnalysis::LockSpan> SVFGNodeLockSpanPair;
-    typedef Map<SVFGNodeLockSpanPair, bool> PairToBoolMap;
+    typedef std::map<SVFGNodeLockSpanPair, bool> PairToBoolMap;
     /// Constructor
     MTASVFGBuilder(MHP* m, LockAnalysis* la) : SVFGBuilder(), mhp(m), lockana(la)
     {
@@ -99,15 +99,15 @@ private:
     MHP* mhp;
     LockAnalysis* lockana;
 
-    Set<NodeIDPair> recordedges;
-    Map<NodeIDPair, PointsTo> edge2pts;
+    std::set<NodeIDPair> recordedges;
+    std::map<NodeIDPair, PointsTo> edge2pts;
 
 
-    Map<const StmtSVFGNode*, SVFGNodeIDSet> prevset;
-    Map<const StmtSVFGNode*, SVFGNodeIDSet> succset;
+    std::map<const StmtSVFGNode*, SVFGNodeIDSet> prevset;
+    std::map<const StmtSVFGNode*, SVFGNodeIDSet> succset;
 
-    Map<const StmtSVFGNode*, bool> headmap;
-    Map<const StmtSVFGNode*, bool> tailmap;
+    std::map<const StmtSVFGNode*, bool> headmap;
+    std::map<const StmtSVFGNode*, bool> tailmap;
 
     PairToBoolMap pairheadmap;
     PairToBoolMap pairtailmap;
@@ -150,7 +150,7 @@ public:
     /// Create signle instance of flow-sensitive pointer analysis
     static FSMPTA* createFSMPTA(SVFModule* module, MHP* m, LockAnalysis* la)
     {
-        if (mfspta == nullptr)
+        if (mfspta == NULL)
         {
             mfspta = new FSMPTA(m,la);
             mfspta->analyze(module);
@@ -163,7 +163,7 @@ public:
     {
         if (mfspta)
             delete mfspta;
-        mfspta = nullptr;
+        mfspta = NULL;
     }
 
     /// Get MHP

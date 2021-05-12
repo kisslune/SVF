@@ -259,7 +259,7 @@ public:
 class MSSAPHISVFGNode : public MRSVFGNode
 {
 public:
-    typedef Map<u32_t,const MRVer*> OPVers;
+    typedef DenseMap<u32_t,const MRVer*> OPVers;
 
 protected:
     const MemSSA::MDEF* res;
@@ -276,7 +276,7 @@ public:
     inline const MRVer* getOpVer(u32_t pos) const
     {
         OPVers::const_iterator it = opVers.find(pos);
-        assert(it!=opVers.end() && "version is nullptr, did not rename?");
+        assert(it!=opVers.end() && "version is NULL, did not rename?");
         return it->second;
     }
     inline void setOpVer(u32_t pos, const MRVer* node)
@@ -372,18 +372,18 @@ class InterMSSAPHISVFGNode : public MSSAPHISVFGNode
 
 public:
     /// Constructor interPHI for formal parameter
-    InterMSSAPHISVFGNode(NodeID id, const FormalINSVFGNode* fi) : MSSAPHISVFGNode(id, fi->getEntryChi(), MInterPhi),fun(fi->getFun()),callInst(nullptr) {}
+    InterMSSAPHISVFGNode(NodeID id, const FormalINSVFGNode* fi) : MSSAPHISVFGNode(id, fi->getEntryChi(), MInterPhi),fun(fi->getFun()),callInst(NULL) {}
     /// Constructor interPHI for actual return
-    InterMSSAPHISVFGNode(NodeID id, const ActualOUTSVFGNode* ao) : MSSAPHISVFGNode(id, ao->getCallCHI(), MInterPhi), fun(nullptr),callInst(ao->getCallSite()) {}
+    InterMSSAPHISVFGNode(NodeID id, const ActualOUTSVFGNode* ao) : MSSAPHISVFGNode(id, ao->getCallCHI(), MInterPhi), fun(NULL),callInst(ao->getCallSite()) {}
 
     inline bool isFormalINPHI() const
     {
-        return (fun!=nullptr) && (callInst == nullptr);
+        return (fun!=NULL) && (callInst == NULL);
     }
 
     inline bool isActualOUTPHI() const
     {
-        return (fun==nullptr) && (callInst != nullptr);
+        return (fun==NULL) && (callInst != NULL);
     }
 
     inline const SVFFunction* getFun() const

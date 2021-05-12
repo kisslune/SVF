@@ -32,7 +32,7 @@
 using namespace SVF;
 using namespace SVFUtil;
 
-AndersenSCD* AndersenSCD::scdAndersen = nullptr;
+AndersenSCD* AndersenSCD::scdAndersen = NULL;
 
 
 /*!

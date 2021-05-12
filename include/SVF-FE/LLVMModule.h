@@ -42,9 +42,9 @@ class LLVMModuleSet
 public:
 
     typedef std::vector<const SVFFunction*> FunctionSetType;
-    typedef Map<const SVFFunction*, const SVFFunction*> FunDeclToDefMapTy;
-    typedef Map<const SVFFunction*, FunctionSetType> FunDefToDeclsMapTy;
-    typedef Map<const GlobalVariable*, GlobalVariable*> GlobalDefToRepMapTy;
+    typedef DenseMap<const SVFFunction*, const SVFFunction*> FunDeclToDefMapTy;
+    typedef DenseMap<const SVFFunction*, FunctionSetType> FunDefToDeclsMapTy;
+    typedef DenseMap<const GlobalVariable*, GlobalVariable*> GlobalDefToRepMapTy;
 
 private:
     static LLVMModuleSet *llvmModuleSet;
@@ -68,7 +68,7 @@ private:
 public:
     static inline LLVMModuleSet *getLLVMModuleSet()
     {
-        if (llvmModuleSet == nullptr)
+        if (llvmModuleSet == NULL)
             llvmModuleSet = new LLVMModuleSet();
         return llvmModuleSet;
     }
@@ -77,7 +77,7 @@ public:
     {
         if (llvmModuleSet)
             delete llvmModuleSet;
-        llvmModuleSet = nullptr;
+        llvmModuleSet = NULL;
     }
 
     SVFModule* buildSVFModule(Module &mod);
@@ -146,15 +146,9 @@ public:
 
     bool hasDeclaration(const SVFFunction *fun) const
     {
-    	if(fun->isDeclaration() && !hasDefinition(fun))
-    		return false;
-
-    	const SVFFunction* funDef = fun;
-        if(fun->isDeclaration() && hasDefinition(fun))
-        	funDef = getDefinition(fun);
-
-    	FunDefToDeclsMapTy::const_iterator it = FunDefToDeclsMap.find(funDef);
-    	return it != FunDefToDeclsMap.end();
+        assert(!fun->isDeclaration() && "not a function definition?");
+        FunDefToDeclsMapTy::const_iterator it = FunDefToDeclsMap.find(fun);
+        return it != FunDefToDeclsMap.end();
     }
 
     const FunctionSetType& getDeclaration(const Function *fun) const
@@ -164,12 +158,9 @@ public:
 
     const FunctionSetType& getDeclaration(const SVFFunction *fun) const
     {
-    	const SVFFunction* funDef = fun;
-        if(fun->isDeclaration() && hasDefinition(fun))
-        	funDef = getDefinition(fun);
-
-        FunDefToDeclsMapTy::const_iterator it = FunDefToDeclsMap.find(funDef);
-        assert(it != FunDefToDeclsMap.end() && "does not have a function definition (body)?");
+        assert(!fun->isDeclaration() && "not a function definition?");
+        FunDefToDeclsMapTy::const_iterator it = FunDefToDeclsMap.find(fun);
+        assert(it != FunDefToDeclsMap.end() && "has no declaration?");
         return it->second;
     }
 

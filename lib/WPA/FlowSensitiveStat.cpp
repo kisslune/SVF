@@ -28,7 +28,6 @@
  */
 
 #include "SVF-FE/LLVMUtil.h"
-#include "WPA/Andersen.h"
 #include "WPA/WPAStat.h"
 #include "WPA/FlowSensitive.h"
 
@@ -63,7 +62,6 @@ void FlowSensitiveStat::clearStat()
 
         /// PAG nodes.
         _NumOfVarHaveINOUTPts[i] = 0;
-        _NumOfVarHaveEmptyINOUTPts[i] = 0;
         _NumOfVarHaveINOUTPtsInFormalIn[i] = 0;
         _NumOfVarHaveINOUTPtsInFormalOut[i] = 0;;
         _NumOfVarHaveINOUTPtsInActualIn[i] = 0;
@@ -71,7 +69,6 @@ void FlowSensitiveStat::clearStat()
         _NumOfVarHaveINOUTPtsInLoad[i] = 0;
         _NumOfVarHaveINOUTPtsInStore[i] = 0;
         _NumOfVarHaveINOUTPtsInMSSAPhi[i] = 0;
-        _PotentialNumOfVarHaveINOUTPts[i] = 0;
 
         _MaxInOutPtsSize[i] = 0;
         _AvgInOutPtsSize[i] = 0;
@@ -101,7 +98,7 @@ void FlowSensitiveStat::performStat()
 
     u32_t fiObjNumber = 0;
     u32_t fsObjNumber = 0;
-    Set<SymID> nodeSet;
+    DenseSet<SymID> nodeSet;
     for (PAG::const_iterator nodeIt = pag->begin(), nodeEit = pag->end(); nodeIt != nodeEit; nodeIt++)
     {
         NodeID nodeId = nodeIt->first;
@@ -204,12 +201,6 @@ void FlowSensitiveStat::performStat()
     PTNumStatMap["VarHaveIN"] = _NumOfVarHaveINOUTPts[IN];
     PTNumStatMap["VarHaveOUT"] = _NumOfVarHaveINOUTPts[OUT];
 
-    PTNumStatMap["PotentialVarHaveIN"] = _PotentialNumOfVarHaveINOUTPts[IN];
-    PTNumStatMap["PotentialVarHaveOUT"] = _PotentialNumOfVarHaveINOUTPts[OUT];
-
-    PTNumStatMap["VarHaveEmptyIN"] = _NumOfVarHaveEmptyINOUTPts[IN];
-    PTNumStatMap["VarHaveEmptyOUT"] = _NumOfVarHaveEmptyINOUTPts[OUT];
-
     PTNumStatMap["VarHaveIN_FI"] = _NumOfVarHaveINOUTPtsInFormalIn[IN];
     PTNumStatMap["VarHaveOUT_FI"] = _NumOfVarHaveINOUTPtsInFormalIn[OUT];
 
@@ -280,7 +271,7 @@ void FlowSensitiveStat::statNullPtr()
         if (inComingStore.empty()==false || outGoingLoad.empty()==false)
         {
             ///TODO: change the condition here to fetch the points-to set
-            const PointsTo& pts = fspta->getPts(pagNodeId);
+            PointsTo& pts = fspta->getPts(pagNodeId);
             if(fspta->containBlackHoleNode(pts))
             {
                 _NumOfConstantPtr++;
@@ -320,13 +311,10 @@ void FlowSensitiveStat::statNullPtr()
  */
 void FlowSensitiveStat::statPtsSize()
 {
-    if (SVFUtil::isa<FlowSensitive::MutDFPTDataTy>(fspta->getPTDataTy()))
-    {
-        // stat of IN set
-        statInOutPtsSize(fspta->getDFInputMap(), IN);
-        // stat of OUT set
-        statInOutPtsSize(fspta->getDFOutputMap(), OUT);
-    }
+    // stat of IN set
+    statInOutPtsSize(fspta->getDFInputMap(), IN);
+    // stat of OUT set
+    statInOutPtsSize(fspta->getDFOutputMap(), OUT);
 
     /// get points-to set size information for top-level pointers.
     u32_t totalValidTopLvlPointers = 0;
@@ -394,11 +382,7 @@ void FlowSensitiveStat::statInOutPtsSize(const DFInOutMap& data, ENUM_INOUT inOr
         PtsMap::const_iterator ptsEit = cptsMap.end();
         for (; ptsIt != ptsEit; ++ptsIt)
         {
-            if (ptsIt->second.empty()) 
-            {
-                _NumOfVarHaveEmptyINOUTPts[inOrOut]++;
-                continue;
-            }
+            if (ptsIt->second.empty()) continue;
 
             u32_t ptsNum = ptsIt->second.count();	/// points-to target number
 
@@ -435,38 +419,6 @@ void FlowSensitiveStat::statInOutPtsSize(const DFInOutMap& data, ENUM_INOUT inOr
         _AvgInOutPtsSize[inOrOut] = (double)inOutPtsSize / _NumOfVarHaveINOUTPts[inOrOut];
 
     _TotalPtsSize += inOutPtsSize;
-
-    // How many IN/OUT PTSs could we have *potentially* had?
-    // l'-o->l, l''-o->l, ..., means there is a possibility of 1 IN PTS.
-    // *p = q && { o } in pts_ander(p) means there is a possibility of 1 OUT PTS.
-    // For OUTs at stores, we must also account for WU/SUs.
-    const SVFG *svfg = fspta->svfg;
-    for (SVFG::const_iterator it = svfg->begin(); it != svfg->end(); ++it)
-    {
-        NodeID s = it->first;
-        const SVFGNode *sn = it->second;
-
-        // Unique objects coming into s.
-        NodeBS incomingObjects;
-        for (const SVFGEdge *e : sn->getInEdges())
-        {
-            const IndirectSVFGEdge *ie = SVFUtil::dyn_cast<IndirectSVFGEdge>(e);
-            if (!ie) continue;
-            for (NodeID o : ie->getPointsTo()) incomingObjects.set(o);
-        }
-
-        _PotentialNumOfVarHaveINOUTPts[IN] += incomingObjects.count();
-
-        if (const StoreSVFGNode *store = SVFUtil::dyn_cast<StoreSVFGNode>(sn))
-        {
-            NodeID p = store->getPAGDstNodeID();
-            // Reuse incomingObjects; what's already in there will be propagated forwarded
-            // as a WU/SU, and what's not (first defined at the store), will be added.
-            for (NodeID o : fspta->ander->getPts(p)) incomingObjects.set(o);
-
-            _PotentialNumOfVarHaveINOUTPts[OUT] += incomingObjects.count();
-        }
-    }
 }
 
 /*!

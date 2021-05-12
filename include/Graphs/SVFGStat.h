@@ -92,8 +92,8 @@ private:
 class SVFGStat : public PTAStat
 {
 public:
-    typedef Set<const SVFGNode*> SVFGNodeSet;
-    typedef OrderedSet<const SVFGEdge*> SVFGEdgeSet;
+    typedef DenseSet<const SVFGNode*> SVFGNodeSet;
+    typedef DenseSet<const SVFGEdge*> SVFGEdgeSet;
     typedef SCCDetection<SVFG*> SVFGSCC;
 
     SVFGStat(SVFG* g);
@@ -194,7 +194,6 @@ private:
     int totalOutEdge;	///< Total number of outgoing SVFG edges
     int totalIndInEdge;	///< Total number of indirect SVFG edges
     int totalIndOutEdge;
-    int totalIndEdgeLabels; ///< Total number of l --o--> lp
 
     int totalIndCallEdge;
     int totalIndRetEdge;

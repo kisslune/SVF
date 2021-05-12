@@ -42,15 +42,10 @@ class BVDataPTAImpl : public PointerAnalysis
 {
 
 public:
-    typedef PTData<NodeID, NodeBS, NodeID, PointsTo> PTDataTy;
-    typedef MutablePTData<NodeID, NodeBS, NodeID, PointsTo> MutPTDataTy;
-    typedef DiffPTData<NodeID, NodeBS, NodeID, PointsTo> DiffPTDataTy;
-    typedef MutableDiffPTData<NodeID, NodeBS, NodeID, PointsTo> MutDiffPTDataTy;
-    typedef DFPTData<NodeID, NodeBS, NodeID, PointsTo> DFPTDataTy;
-    typedef MutableDFPTData<NodeID, NodeBS, NodeID, PointsTo> MutDFPTDataTy;
-    typedef IncMutableDFPTData<NodeID, NodeBS, NodeID, PointsTo> IncMutDFPTDataTy;
-    typedef VersionedPTData<NodeID, NodeBS, NodeID, PointsTo, VersionedVar, Set<VersionedVar>> VersionedPTDataTy;
-    typedef MutableVersionedPTData<NodeID, NodeBS, NodeID, PointsTo, VersionedVar, Set<VersionedVar>> MutVersionedPTDataTy;
+    typedef PTData<NodeID,PointsTo> PTDataTy;	/// Points-to data structure type
+    typedef DiffPTData<NodeID,PointsTo,EdgeID> DiffPTDataTy;	/// Points-to data structure type
+    typedef DFPTData<NodeID,PointsTo> DFPTDataTy;	/// Points-to data structure type
+    typedef IncDFPTData<NodeID,PointsTo> IncDFPTDataTy;	/// Points-to data structure type
 
     /// Constructor
     BVDataPTAImpl(PAG* pag, PointerAnalysis::PTATY type, bool alias_check = true);
@@ -70,31 +65,51 @@ public:
     inline void destroy()
     {
         delete ptD;
-        ptD = nullptr;
+        ptD = NULL;
     }
 
     /// Get points-to and reverse points-to
     ///@{
-    virtual inline const PointsTo& getPts(NodeID id)
+    virtual inline PointsTo& getPts(NodeID id)
     {
         return ptD->getPts(id);
     }
-    virtual inline const NodeBS& getRevPts(NodeID nodeId)
+    virtual inline PointsTo& getRevPts(NodeID nodeId)
     {
         return ptD->getRevPts(nodeId);
     }
     //@}
 
-    /// Remove element from the points-to set of id.
-    virtual inline void clearPts(NodeID id, NodeID element)
+    /// Expand FI objects
+    virtual void expandFIObjs(const PointsTo& pts, PointsTo& expandedPts);
+
+    /// Interface for analysis result storage on filesystem.
+    //@{
+    virtual void writeToFile(const std::string& filename);
+    virtual bool readFromFile(const std::string& filename);
+    //@}
+
+protected:
+
+    /// Update callgraph. This should be implemented by its subclass.
+    virtual inline bool updateCallGraph(const CallSiteToFunPtrMap&)
     {
-        ptD->clearPts(id, element);
+        assert(false && "Virtual function not implemented!");
+        return false;
     }
 
-    /// Clear points-to set of id.
-    virtual inline void clearFullPts(NodeID id)
+    /// Get points-to data structure
+    inline PTDataTy* getPTDataTy() const
     {
-        ptD->clearFullPts(id);
+        return ptD;
+    }
+    inline DiffPTDataTy* getDiffPTDataTy() const
+    {
+        return SVFUtil::cast<DiffPTDataTy>(ptD);
+    }
+    inline IncDFPTDataTy* getDFPTDataTy() const
+    {
+        return SVFUtil::cast<IncDFPTDataTy>(ptD);
     }
 
     /// Union/add points-to. Add the reverse points-to for node collapse purpose
@@ -115,90 +130,13 @@ public:
     //@}
 
     /// Clear all data
-    virtual inline void clearAllPts()
+    virtual inline void clearPts()
     {
         ptD->clear();
     }
 
-    /// Expand FI objects
-    virtual void expandFIObjs(const PointsTo& pts, PointsTo& expandedPts);
-
-    /// Interface for analysis result storage on filesystem.
-    //@{
-    virtual void writeToFile(const std::string& filename);
-    virtual bool readFromFile(const std::string& filename);
-    //@}
-
-protected:
-
-    /// Finalization of pointer analysis, and normalize points-to information to Bit Vector representation
-    virtual void finalize()
-    {
-        normalizePointsTo();
-        PointerAnalysis::finalize();
-    }
-
-    /// Update callgraph. This should be implemented by its subclass.
-    virtual inline bool updateCallGraph(const CallSiteToFunPtrMap&)
-    {
-        assert(false && "Virtual function not implemented!");
-        return false;
-    }
-
-    /// Get points-to data structure
-    inline PTDataTy* getPTDataTy() const
-    {
-        return ptD;
-    }
-
-    inline DiffPTDataTy* getDiffPTDataTy() const
-    {
-        DiffPTDataTy* diff = SVFUtil::dyn_cast<DiffPTDataTy>(ptD);
-        assert(diff && "BVDataPTAImpl::getDiffPTDataTy: not a DiffPTDataTy!");
-        return diff;
-    }
-
-    inline DFPTDataTy* getDFPTDataTy() const
-    {
-        DFPTDataTy* df = SVFUtil::dyn_cast<DFPTDataTy>(ptD);
-        assert(df && "BVDataPTAImpl::getDFPTDataTy: not a DFPTDataTy!");
-        return df;
-    }
-
-    inline MutDFPTDataTy* getMutDFPTDataTy() const
-    {
-        MutDFPTDataTy* mdf = SVFUtil::dyn_cast<MutDFPTDataTy>(ptD);
-        assert(mdf && "BVDataPTAImpl::getMutDFPTDataTy: not a MutDFPTDataTy!");
-        return mdf;
-    }
-
-    inline VersionedPTDataTy* getVersionedPTDataTy() const
-    {
-        VersionedPTDataTy* v = SVFUtil::dyn_cast<VersionedPTDataTy>(ptD);
-        assert(v && "BVDataPTAImpl::getVersionedPTDataTy: not a VersionedPTDataTy!");
-        return v;
-    }
-
     /// On the fly call graph construction
     virtual void onTheFlyCallGraphSolve(const CallSiteToFunPtrMap& callsites, CallEdgeMap& newEdges);
-
-    /// Normalize points-to information for field-sensitive analysis,
-    /// i.e., replace fieldObj with baseObj if it is field-insensitive
-    virtual void normalizePointsTo(){
-        for (PAG::iterator nIter = pag->begin(); nIter != pag->end(); ++nIter){
-            const PointsTo tmpPts = getPts(nIter->first);
-            for(NodeID obj : tmpPts){
-                NodeID baseObj = pag->getBaseObjNode(obj);
-                if(baseObj == obj)
-                    continue;
-                const MemObj* memObj = pag->getObject(obj);
-                if(memObj && memObj->isFieldInsensitive()){
-                    clearPts(nIter->first,obj);
-                    addPts(nIter->first,baseObj);
-                }
-            }
-        }
-    }
 
 private:
     /// Points-to data
@@ -242,17 +180,15 @@ class CondPTAImpl : public PointerAnalysis
 public:
     typedef CondVar<Cond> CVar;
     typedef CondStdSet<CVar>  CPtSet;
-    typedef PTData<CVar, Set<CVar>, CVar, CPtSet> PTDataTy;
-    typedef MutablePTData<CVar, Set<CVar>, CVar, CPtSet> MutPTDataTy;
-    typedef Map<NodeID,PointsTo> PtrToBVPtsMap; /// map a pointer to its BitVector points-to representation
-    typedef Map<NodeID, NodeBS> PtrToNSMap;
-    typedef Map<NodeID,CPtSet> PtrToCPtsMap;	 /// map a pointer to its conditional points-to set
+    typedef PTData<CVar,CPtSet> PTDataTy;	         /// Points-to data structure type
+    typedef DenseMap<NodeID,PointsTo> PtrToBVPtsMap; /// map a pointer to its BitVector points-to representation
+    typedef DenseMap<NodeID,CPtSet> PtrToCPtsMap;	 /// map a pointer to its conditional points-to set
 
     /// Constructor
     CondPTAImpl(PAG* pag, PointerAnalysis::PTATY type) : PointerAnalysis(pag, type), normalized(false)
     {
         if (type == PathS_DDA || type == Cxt_DDA)
-            ptD = new MutPTDataTy();
+            ptD = new PTDataTy();
         else
             assert(false && "no points-to data available");
 
@@ -274,7 +210,7 @@ public:
     inline void destroy()
     {
         delete ptD;
-        ptD = nullptr;
+        ptD = NULL;
     }
 
     /// Get points-to data
@@ -283,32 +219,13 @@ public:
         return ptD;
     }
 
-    inline MutPTDataTy* getMutPTDataTy() const
-    {
-        MutPTDataTy* mut = SVFUtil::dyn_cast<MutPTDataTy>(ptD);
-        assert(mut && "BVDataPTAImpl::getMutPTDataTy: not a MutPTDataTy!");
-        return mut;
-    }
-
-    inline bool hasPtsMap(void) const
-    {
-        return SVFUtil::isa<MutPTDataTy>(ptD);
-    }
-
-    inline const typename MutPTDataTy::PtsMap& getPtsMap() const
-    {
-        if (MutPTDataTy *m = SVFUtil::dyn_cast<MutPTDataTy>(ptD)) return m->getPtsMap();
-        assert(false && "CondPTAImpl::getPtsMap: not a PTData with a PtsMap!");
-        exit(1);
-    }
-
     /// Get points-to and reverse points-to
     ///@{
-    virtual inline const CPtSet& getPts(CVar id)
+    virtual inline CPtSet& getPts(CVar id)
     {
         return ptD->getPts(id);
     }
-    virtual inline const Set<CVar>& getRevPts(CVar nodeId)
+    virtual inline CPtSet& getRevPts(CVar nodeId)
     {
         return ptD->getRevPts(nodeId);
     }
@@ -357,7 +274,7 @@ protected:
     /// Finalization of pointer analysis, and normalize points-to information to Bit Vector representation
     virtual void finalize()
     {
-        normalizePointsTo();
+        NormalizePointsTo();
         PointerAnalysis::finalize();
     }
     /// Union/add points-to, and add the reverse points-to for node collapse purpose
@@ -431,25 +348,18 @@ protected:
     //@}
 
     /// Normalize points-to information to BitVector/conditional representation
-    virtual void normalizePointsTo()
+    virtual void NormalizePointsTo()
     {
         normalized = true;
-        if (hasPtsMap())
+        const typename PTDataTy::PtsMap& ptsMap = getPTDataTy()->getPtsMap();
+        for(typename PTDataTy::PtsMap::const_iterator it = ptsMap.begin(), eit=ptsMap.end(); it!=eit; ++it)
         {
-            const typename MutPTDataTy::PtsMap& ptsMap = getPtsMap();
-            for(typename MutPTDataTy::PtsMap::const_iterator it = ptsMap.begin(), eit=ptsMap.end(); it!=eit; ++it)
+            for(typename CPtSet::const_iterator cit = it->second.begin(), ecit=it->second.end(); cit!=ecit; ++cit)
             {
-                for(typename CPtSet::const_iterator cit = it->second.begin(), ecit=it->second.end(); cit!=ecit; ++cit)
-                {
-                    ptrToBVPtsMap[(it->first).get_id()].set(cit->get_id());
-                    objToNSRevPtsMap[cit->get_id()].set((it->first).get_id());
-                    ptrToCPtsMap[(it->first).get_id()].set(*cit);
-                }
+                ptrToBVPtsMap[(it->first).get_id()].set(cit->get_id());
+                objToBVRevPtsMap[cit->get_id()].set((it->first).get_id());
+                ptrToCPtsMap[(it->first).get_id()].set(*cit);
             }
-        }
-        else
-        {
-            assert(false && "CondPTAImpl::NormalizePointsTo: could not normalize points-to sets");
         }
     }
     /// Points-to data
@@ -459,7 +369,7 @@ protected:
     /// Normal points-to representation (without conditions)
     PtrToBVPtsMap ptrToBVPtsMap;
     /// Normal points-to representation (without conditions)
-    PtrToNSMap objToNSRevPtsMap;
+    PtrToBVPtsMap objToBVRevPtsMap;
     /// Conditional points-to representation (with conditions)
     PtrToCPtsMap ptrToCPtsMap;
 public:
@@ -489,10 +399,10 @@ public:
         return ptrToCPtsMap[ptr];
     }
     /// Given an object return all pointers points to this object
-    virtual inline NodeBS& getRevPts(NodeID obj)
+    virtual inline PointsTo& getRevPts(NodeID obj)
     {
         assert(normalized && "Pts of all context-var have to be merged/normalized. Want to use getPts(CVar cvar)??");
-        return objToNSRevPtsMap[obj];
+        return objToBVRevPtsMap[obj];
     }
 
     /// Interface expose to users of our pointer analysis, given Location infos
@@ -560,7 +470,7 @@ public:
     /// Dump points-to information of top-level pointers
     void dumpTopLevelPtsTo()
     {
-        for (OrderedNodeSet::iterator nIter = this->getAllValidPtrs().begin(); nIter != this->getAllValidPtrs().end(); ++nIter)
+        for (NodeSet::iterator nIter = this->getAllValidPtrs().begin(); nIter != this->getAllValidPtrs().end(); ++nIter)
         {
             const PAGNode* node = this->getPAG()->getPAGNode(*nIter);
             if (this->getPAG()->isValidTopLevelPtr(node))

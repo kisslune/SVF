@@ -62,7 +62,7 @@ public:
 protected:
 
     /// Constructor
-    CFLSolver(): _graph(nullptr)
+    CFLSolver(): _graph(NULL)
     {
     }
     /// Destructor

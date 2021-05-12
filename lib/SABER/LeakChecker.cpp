@@ -27,13 +27,14 @@
  *      Author: Yulei Sui
  */
 
-#include "Util/Options.h"
 #include "SVF-FE/LLVMUtil.h"
 #include "SABER/LeakChecker.h"
 
 using namespace SVF;
 using namespace SVFUtil;
 
+static llvm::cl::opt<bool> ValidateTests("valid-tests", llvm::cl::init(false),
+        llvm::cl::desc("Validate memory leak tests"));
 
 /*!
  * Initialize sources
@@ -163,7 +164,7 @@ void LeakChecker::reportBug(ProgSlice* slice)
         slice->annotatePaths();
     }
 
-    if(Options::ValidateTests)
+    if(ValidateTests)
         testsValidation(slice);
 }
 
@@ -176,7 +177,7 @@ void LeakChecker::testsValidation(const ProgSlice* slice)
     const SVFGNode* source = slice->getSource();
     const CallBlockNode* cs = getSrcCSID(source);
     const SVFFunction* fun = getCallee(cs->getCallSite());
-    if(fun==nullptr)
+    if(fun==NULL)
         return;
 
     validateSuccessTests(source,fun);
@@ -222,7 +223,7 @@ void LeakChecker::validateSuccessTests(const SVFGNode* source, const SVFFunction
         return;
     }
 
-    std::string funName = source->getFun()->getName().str();
+    std::string funName = source->getFun()->getName();
 
     if (success)
         outs() << sucMsg("\t SUCCESS :") << funName << " check <src id:" << source->getId()
@@ -270,7 +271,7 @@ void LeakChecker::validateExpectedFailureTests(const SVFGNode* source, const SVF
         return;
     }
 
-    std::string funName = source->getFun()->getName().str();
+    std::string funName = source->getFun()->getName();
 
     if (expectedFailure)
         outs() << sucMsg("\t EXPECTED-FAILURE :") << funName << " check <src id:" << source->getId()

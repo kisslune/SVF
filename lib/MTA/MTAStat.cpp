@@ -5,7 +5,6 @@
  *      Author: Yulei Sui, Peng Di
  */
 
-#include "Util/Options.h"
 #include "MTA/MTAStat.h"
 #include "MTA/TCT.h"
 #include "MTA/MHP.h"
@@ -16,6 +15,7 @@
 
 using namespace SVF;
 
+static llvm::cl::opt<bool> AllPairMHP("allpairMhp", llvm::cl::init(false), llvm::cl::desc("All pair MHP computation"));
 
 /*!
  * Statistics for thread call graph
@@ -30,7 +30,7 @@ void MTAStat::performThreadCallGraphStat(ThreadCallGraph* tcg)
     {
         bool indirectfork = false;
         const Function* spawnee = SVFUtil::dyn_cast<Function>(tcg->getThreadAPI()->getForkedFun(*it));
-        if(spawnee==nullptr)
+        if(spawnee==NULL)
         {
             numOfIndForksite++;
             indirectfork = true;
@@ -91,7 +91,7 @@ void MTAStat::performTCTStat(TCT* tct)
 void MTAStat::performMHPPairStat(MHP* mhp, LockAnalysis* lsa)
 {
 
-    if(Options::AllPairMHP)
+    if(AllPairMHP)
     {
         InstSet instSet1;
         InstSet instSet2;

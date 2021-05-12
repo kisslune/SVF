@@ -27,7 +27,6 @@
  *      Author: Yulei Sui
  */
 
-#include "Util/Options.h"
 #include "SVF-FE/DCHG.h"
 #include "Util/SVFModule.h"
 #include "Util/TypeBasedHeapCloning.h"
@@ -35,11 +34,12 @@
 #include "WPA/FlowSensitive.h"
 #include "WPA/Andersen.h"
 
+static llvm::cl::opt<bool> CTirAliasEval("ctir-alias-eval", llvm::cl::init(false), llvm::cl::desc("Prints alias evaluation of ctir instructions in FS analyses"));
 
 using namespace SVF;
 using namespace SVFUtil;
 
-FlowSensitive* FlowSensitive::fspta = nullptr;
+FlowSensitive* FlowSensitive::fspta = NULL;
 
 /*!
  * Initialize analysis
@@ -48,13 +48,9 @@ void FlowSensitive::initialize()
 {
     PointerAnalysis::initialize();
 
-    ander = AndersenWaveDiff::createAndersenWaveDiff(getPAG());
+    AndersenWaveDiff* ander = AndersenWaveDiff::createAndersenWaveDiff(getPAG());
     // When evaluating ctir aliases, we want the whole SVFG.
-    if(Options::OPTSVFG)
-        svfg = Options::CTirAliasEval ? memSSA.buildFullSVFG(ander) : memSSA.buildPTROnlySVFG(ander);
-    else
-        svfg = memSSA.buildPTROnlySVFGWithoutOPT(ander);
-
+    svfg = CTirAliasEval ? memSSA.buildFullSVFG(ander) : memSSA.buildPTROnlySVFG(ander);
     setGraph(svfg);
     //AndersenWaveDiff::releaseAndersenWaveDiff();
 
@@ -82,8 +78,8 @@ void FlowSensitive::analyze()
 
         callGraphSCC->find();
 
-        initWorklist();
-        solveWorklist();
+        solve();
+
     }
     while (updateCallGraph(getIndirectCallsites()));
 
@@ -92,7 +88,7 @@ void FlowSensitive::analyze()
     double end = stat->getClk(true);
     solveTime += (end - start) / TIMEINTERVAL;
 
-    if (Options::CTirAliasEval)
+    if (CTirAliasEval)
     {
         printCTirAliasStats();
     }
@@ -106,7 +102,7 @@ void FlowSensitive::analyze()
  */
 void FlowSensitive::finalize()
 {
-	if(Options::DumpVFG)
+	if(svfg->getDumpVFG())
 		svfg->dump("fs_solved", true);
 
     NodeStack& nodeStack = WPASolver<SVFG*>::SCCDetect();
@@ -426,37 +422,26 @@ bool FlowSensitive::processGep(const GepSVFGNode* edge)
     const PointsTo& srcPts = getPts(edge->getPAGSrcNodeID());
 
     PointsTo tmpDstPts;
-    if (SVFUtil::isa<VariantGepPE>(edge->getPAGEdge()))
+    for (PointsTo::iterator piter = srcPts.begin(); piter != srcPts.end(); ++piter)
     {
-        for (NodeID o : srcPts)
+        NodeID ptd = *piter;
+        if (isBlkObjOrConstantObj(ptd))
+            tmpDstPts.set(ptd);
+        else
         {
-            if (isBlkObjOrConstantObj(o))
+            if (SVFUtil::isa<VariantGepPE>(edge->getPAGEdge()))
             {
-                tmpDstPts.set(o);
-                continue;
+                setObjFieldInsensitive(ptd);
+                tmpDstPts.set(getFIObjNode(ptd));
             }
-
-            setObjFieldInsensitive(o);
-            tmpDstPts.set(getFIObjNode(o));
-        }
-    }
-    else if (const NormalGepPE* normalGep = SVFUtil::dyn_cast<NormalGepPE>(edge->getPAGEdge()))
-    {
-        for (NodeID o : srcPts)
-        {
-            if (isBlkObjOrConstantObj(o))
+            else if (const NormalGepPE* normalGep = SVFUtil::dyn_cast<NormalGepPE>(edge->getPAGEdge()))
             {
-                tmpDstPts.set(o);
-                continue;
+                NodeID fieldSrcPtdNode = getGepObjNode(ptd,	normalGep->getLocationSet());
+                tmpDstPts.set(fieldSrcPtdNode);
             }
-
-            NodeID fieldSrcPtdNode = getGepObjNode(o, normalGep->getLocationSet());
-            tmpDstPts.set(fieldSrcPtdNode);
+            else
+                assert(false && "new gep edge?");
         }
-    }
-    else
-    {
-        assert(false && "FlowSensitive::processGep: New type GEP edge type?");
     }
 
     if (unionPts(edge->getPAGDstNodeID(), tmpDstPts))
@@ -716,7 +701,7 @@ void FlowSensitive::printCTirAliasStats(void)
     assert(dchg && "eval-ctir-aliases needs DCHG.");
 
     // < SVFG node ID (loc), PAG node of interest (top-level pointer) >.
-    Set<std::pair<NodeID, NodeID>> cmpLocs;
+    DenseSet<std::pair<NodeID, NodeID>> cmpLocs;
     for (SVFG::iterator npair = svfg->begin(); npair != svfg->end(); ++npair)
     {
         NodeID loc = npair->first;
@@ -775,7 +760,7 @@ void FlowSensitive::printCTirAliasStats(void)
                  << "  " << "NO  % : " << 100 * ((double)noAliases/(double)(total)) << "\n";
 }
 
-void FlowSensitive::countAliases(Set<std::pair<NodeID, NodeID>> cmp, unsigned *mayAliases, unsigned *noAliases)
+void FlowSensitive::countAliases(DenseSet<std::pair<NodeID, NodeID>> cmp, unsigned *mayAliases, unsigned *noAliases)
 {
     for (std::pair<NodeID, NodeID> locPA : cmp)
     {

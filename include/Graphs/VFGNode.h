@@ -60,12 +60,12 @@ public:
 
     typedef VFGEdge::VFGEdgeSetTy::iterator iterator;
     typedef VFGEdge::VFGEdgeSetTy::const_iterator const_iterator;
-    typedef Set<const CallPE*> CallPESet;
-    typedef Set<const RetPE*> RetPESet;
+    typedef DenseSet<const CallPE*> CallPESet;
+    typedef DenseSet<const RetPE*> RetPESet;
 
 public:
     /// Constructor
-    VFGNode(NodeID i, VFGNodeK k): GenericVFGNodeTy(i,k), icfgNode(nullptr)
+    VFGNode(NodeID i, VFGNodeK k): GenericVFGNodeTy(i,k), icfgNode(NULL)
     {
 
     }
@@ -310,7 +310,7 @@ public:
 class CmpVFGNode: public VFGNode
 {
 public:
-    typedef Map<u32_t,const PAGNode*> OPVers;
+    typedef DenseMap<u32_t,const PAGNode*> OPVers;
 protected:
     const PAGNode* res;
     OPVers opVers;
@@ -347,7 +347,7 @@ public:
     inline const PAGNode* getOpVer(u32_t pos) const
     {
         OPVers::const_iterator it = opVers.find(pos);
-        assert(it!=opVers.end() && "version is nullptr, did not rename?");
+        assert(it!=opVers.end() && "version is NULL, did not rename?");
         return it->second;
     }
     inline void setOpVer(u32_t pos, const PAGNode* node)
@@ -381,7 +381,7 @@ public:
 class BinaryOPVFGNode: public VFGNode
 {
 public:
-    typedef Map<u32_t,const PAGNode*> OPVers;
+    typedef DenseMap<u32_t,const PAGNode*> OPVers;
 protected:
     const PAGNode* res;
     OPVers opVers;
@@ -418,7 +418,7 @@ public:
     inline const PAGNode* getOpVer(u32_t pos) const
     {
         OPVers::const_iterator it = opVers.find(pos);
-        assert(it!=opVers.end() && "version is nullptr, did not rename?");
+        assert(it!=opVers.end() && "version is NULL, did not rename?");
         return it->second;
     }
     inline void setOpVer(u32_t pos, const PAGNode* node)
@@ -452,7 +452,7 @@ public:
 class UnaryOPVFGNode: public VFGNode
 {
 public:
-    typedef Map<u32_t,const PAGNode*> OPVers;
+    typedef DenseMap<u32_t,const PAGNode*> OPVers;
 protected:
     const PAGNode* res;
     OPVers opVers;
@@ -464,13 +464,11 @@ private:
 
 public:
     /// Constructor
-	UnaryOPVFGNode(NodeID id, const PAGNode *r) : VFGNode(id, UnaryOp), res(r) {
-		const Value *val = r->getValue();
-		bool unop = (SVFUtil::isa<UnaryOperator>(val)
-				|| SVFUtil::isa<BranchInst>(val)
-				|| SVFUtil::isa<SwitchInst>(val));
-		assert(unop && "not a unary operator or a BranchInst or a SwitchInst?");
-	}
+    UnaryOPVFGNode(NodeID id,const PAGNode* r): VFGNode(id,UnaryOp), res(r)
+    {
+        const UnaryOperator* unary = SVFUtil::dyn_cast<UnaryOperator>(r->getValue());
+        assert(unary && "not a unary operator?");
+    }
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
     static inline bool classof(const UnaryOPVFGNode *)
@@ -491,7 +489,7 @@ public:
     inline const PAGNode* getOpVer(u32_t pos) const
     {
         OPVers::const_iterator it = opVers.find(pos);
-        assert(it!=opVers.end() && "version is nullptr, did not rename?");
+        assert(it!=opVers.end() && "version is NULL, did not rename?");
         return it->second;
     }
     inline void setOpVer(u32_t pos, const PAGNode* node)
@@ -565,7 +563,7 @@ class PHIVFGNode : public VFGNode
 {
 
 public:
-    typedef Map<u32_t,const PAGNode*> OPVers;
+    typedef DenseMap<u32_t,const PAGNode*> OPVers;
 protected:
     const PAGNode* res;
     OPVers opVers;
@@ -585,7 +583,7 @@ public:
     inline const PAGNode* getOpVer(u32_t pos) const
     {
         OPVers::const_iterator it = opVers.find(pos);
-        assert(it!=opVers.end() && "version is nullptr, did not rename?");
+        assert(it!=opVers.end() && "version is NULL, did not rename?");
         return it->second;
     }
     inline void setOpVer(u32_t pos, const PAGNode* node)
@@ -637,7 +635,7 @@ class IntraPHIVFGNode : public PHIVFGNode
 {
 
 public:
-    typedef Map<u32_t,const ICFGNode*> OPIncomingBBs;
+    typedef DenseMap<u32_t,const ICFGNode*> OPIncomingBBs;
 
 private:
     OPIncomingBBs opIncomingBBs;
@@ -650,7 +648,7 @@ public:
     inline const ICFGNode* getOpIncomingBB(u32_t pos) const
     {
         OPIncomingBBs::const_iterator it = opIncomingBBs.find(pos);
-        assert(it!=opIncomingBBs.end() && "version is nullptr, did not rename?");
+        assert(it!=opIncomingBBs.end() && "version is NULL, did not rename?");
         return it->second;
     }
     inline void setOpVerAndBB(u32_t pos, const PAGNode* node, const ICFGNode* bb)
@@ -1008,18 +1006,18 @@ class InterPHIVFGNode : public PHIVFGNode
 
 public:
     /// Constructor interPHI for formal parameter
-    InterPHIVFGNode(NodeID id, const FormalParmVFGNode* fp) : PHIVFGNode(id, fp->getParam(), TInterPhi),fun(fp->getFun()),callInst(nullptr) {}
+    InterPHIVFGNode(NodeID id, const FormalParmVFGNode* fp) : PHIVFGNode(id, fp->getParam(), TInterPhi),fun(fp->getFun()),callInst(NULL) {}
     /// Constructor interPHI for actual return
     InterPHIVFGNode(NodeID id, const ActualRetVFGNode* ar) : PHIVFGNode(id, ar->getRev(), TInterPhi), fun(ar->getCaller()),callInst(ar->getCallSite()) {}
 
     inline bool isFormalParmPHI() const
     {
-        return (fun!=nullptr) && (callInst == nullptr);
+        return (fun!=NULL) && (callInst == NULL);
     }
 
     inline bool isActualRetPHI() const
     {
-        return (fun!=nullptr) && (callInst != nullptr);
+        return (fun!=NULL) && (callInst != NULL);
     }
 
     inline const SVFFunction* getFun() const

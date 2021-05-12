@@ -91,7 +91,7 @@ PAG* PAGBuilderFromFile::build()
                     pag->addDummyValNode(nodeId);
                 else if (nodetype == "o")
                 {
-                    const MemObj* mem = pag->addDummyMemObj(nodeId, nullptr);
+                    const MemObj* mem = pag->addDummyMemObj(nodeId, NULL);
                     pag->addFIObjNode(mem);
                 }
                 else
@@ -167,15 +167,15 @@ void PAGBuilderFromFile::addEdge(NodeID srcID, NodeID dstID,
     else if (edge == "load")
         pag->addLoadPE(srcID, dstID);
     else if (edge == "store")
-        pag->addStorePE(srcID, dstID, nullptr);
+        pag->addStorePE(srcID, dstID, NULL);
     else if (edge == "gep")
         pag->addNormalGepPE(srcID, dstID, LocationSet(offsetOrCSId));
     else if (edge == "variant-gep")
         pag->addVariantGepPE(srcID, dstID);
     else if (edge == "call")
-        pag->addEdge(srcNode, dstNode, new CallPE(srcNode, dstNode, nullptr));
+        pag->addEdge(srcNode, dstNode, new CallPE(srcNode, dstNode, NULL));
     else if (edge == "ret")
-        pag->addEdge(srcNode, dstNode, new RetPE(srcNode, dstNode, nullptr));
+        pag->addEdge(srcNode, dstNode, new RetPE(srcNode, dstNode, NULL));
     else if (edge == "cmp")
         pag->addCmpPE(srcID, dstID);
     else if (edge == "binary-op")

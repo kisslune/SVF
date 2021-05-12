@@ -5,7 +5,6 @@
  *      Author: Yulei Sui, Peng Di
  */
 
-#include "Util/Options.h"
 #include "MTA/MTA.h"
 #include "MTA/MHP.h"
 #include "MTA/TCT.h"
@@ -20,14 +19,18 @@ using namespace SVFUtil;
 
 static llvm::RegisterPass<MTA> RACEDETECOR("pmhp", "May-Happen-in-Parallel Analysis");
 
+static llvm::cl::opt<bool> AndersenAnno("tsan-ander", llvm::cl::init(false), llvm::cl::desc("Add TSan annotation according to Andersen"));
+
+static llvm::cl::opt<bool> FSAnno("tsan-fs", llvm::cl::init(false), llvm::cl::desc("Add TSan annotation according to flow-sensitive analysis"));
+
 
 char MTA::ID = 0;
-ModulePass* MTA::modulePass = nullptr;
+ModulePass* MTA::modulePass = NULL;
 MTA::FunToSEMap MTA::func2ScevMap;
 MTA::FunToLoopInfoMap MTA::func2LoopInfoMap;
 
 MTA::MTA() :
-    ModulePass(ID), tcg(nullptr), tct(nullptr)
+    ModulePass(ID), tcg(NULL), tct(NULL)
 {
     stat = new MTAStat();
 }
@@ -61,12 +64,12 @@ bool MTA::runOnModule(SVFModule* module)
 
 
     /*
-    if (Options::AndersenAnno) {
+    if (AndersenAnno) {
         pta = mhp->getTCT()->getPTA();
         if (pta->printStat())
             stat->performMHPPairStat(mhp,lsa);
         AndersenWaveDiff::releaseAndersenWaveDiff();
-    } else if (Options::FSAnno) {
+    } else if (FSAnno) {
 
         reportMemoryUsageKB("Mem before analysis");
         DBOUT(DGENERAL, outs() << pasMsg("FSMPTA analysis\n"));
@@ -167,7 +170,7 @@ void MTA::detect(SVFModule* module)
     LoadSet loads;
     StoreSet stores;
 
-    Set<const Instruction*> needcheckinst;
+    std::set<const Instruction*> needcheckinst;
     // Add symbols for all of the functions and the instructions in them.
     for (SVFModule::iterator F = module->begin(), E = module->end(); F != E; ++F)
     {

@@ -27,7 +27,6 @@
  *      Author: Yulei Sui
  */
 
-#include "Util/Options.h"
 #include "SVF-FE/CallGraphBuilder.h"
 #include "SVF-FE/CHG.h"
 #include "SVF-FE/DCHG.h"
@@ -51,9 +50,53 @@ using namespace SVF;
 using namespace SVFUtil;
 using namespace cppUtil;
 
+static llvm::cl::opt<bool> TYPEPrint("print-type", llvm::cl::init(false),
+                                     llvm::cl::desc("Print type"));
 
-CommonCHGraph* PointerAnalysis::chgraph = nullptr;
-PAG* PointerAnalysis::pag = nullptr;
+static llvm::cl::opt<bool> FuncPointerPrint("print-fp", llvm::cl::init(false),
+        llvm::cl::desc("Print targets of indirect call site"));
+
+static llvm::cl::opt<bool> PTSPrint("print-pts", llvm::cl::init(false),
+                                    llvm::cl::desc("Print points-to set of top-level pointers"));
+
+static llvm::cl::opt<bool> PTSAllPrint("print-all-pts", llvm::cl::init(false),
+                                       llvm::cl::desc("Print all points-to set of both top-level and address-taken variables"));
+
+static llvm::cl::opt<bool> PStat("stat", llvm::cl::init(false),
+                                 llvm::cl::desc("Statistic for Pointer analysis"));
+
+static llvm::cl::opt<unsigned> statBudget("statlimit",  llvm::cl::init(20),
+        llvm::cl::desc("Iteration budget for On-the-fly statistics"));
+
+static llvm::cl::opt<bool> PAGDotGraph("dump-pag", llvm::cl::init(false),
+                                       llvm::cl::desc("Dump dot graph of PAG"));
+
+static llvm::cl::opt<bool> DumpICFG("dump-icfg", llvm::cl::init(false),
+                                    llvm::cl::desc("Dump dot graph of ICFG"));
+
+static llvm::cl::opt<bool> CallGraphDotGraph("dump-callgraph", llvm::cl::init(false),
+        llvm::cl::desc("Dump dot graph of Call Graph"));
+
+static llvm::cl::opt<bool> PAGPrint("print-pag", llvm::cl::init(false),
+                                    llvm::cl::desc("Print PAG to command line"));
+
+static llvm::cl::opt<unsigned> IndirectCallLimit("indCallLimit",  llvm::cl::init(50000),
+        llvm::cl::desc("Indirect solved call edge limit"));
+
+static llvm::cl::opt<bool> UsePreCompFieldSensitive("preFieldSensitive", llvm::cl::init(true),
+        llvm::cl::desc("Use pre-computed field-sensitivity for later analysis"));
+
+static llvm::cl::opt<bool> EnableAliasCheck("alias-check", llvm::cl::init(true),
+        llvm::cl::desc("Enable alias check functions"));
+
+static llvm::cl::opt<bool> EnableThreadCallGraph("enable-tcg", llvm::cl::init(true),
+        llvm::cl::desc("Enable pointer analysis to use thread call graph"));
+
+static llvm::cl::opt<bool> connectVCallOnCHA("vcall-cha", llvm::cl::init(false),
+        llvm::cl::desc("connect virtual calls using cha"));
+
+CommonCHGraph* PointerAnalysis::chgraph = NULL;
+PAG* PointerAnalysis::pag = NULL;
 
 const std::string PointerAnalysis::aliasTestMayAlias            = "MAYALIAS";
 const std::string PointerAnalysis::aliasTestMayAliasMangled     = "_Z8MAYALIASPvS_";
@@ -72,13 +115,13 @@ const std::string PointerAnalysis::aliasTestFailNoAliasMangled  = "_Z20EXPECTEDF
  * Constructor
  */
 PointerAnalysis::PointerAnalysis(PAG* p, PTATY ty, bool alias_check) :
-    svfMod(nullptr),ptaTy(ty),stat(nullptr),ptaCallGraph(nullptr),callGraphSCC(nullptr),icfg(nullptr),typeSystem(nullptr)
+    svfMod(NULL),ptaTy(ty),stat(NULL),ptaCallGraph(NULL),callGraphSCC(NULL),icfg(NULL),typeSystem(NULL)
 {
     pag = p;
-	OnTheFlyIterBudgetForStat = Options::StatBudget;
-    print_stat = Options::PStat;
+	OnTheFlyIterBudgetForStat = statBudget;
+    print_stat = PStat;
     ptaImplTy = BaseImpl;
-    alias_validation = (alias_check && Options::EnableAliasCheck);
+    alias_validation = (alias_check && EnableAliasCheck);
 }
 
 /*!
@@ -95,16 +138,16 @@ PointerAnalysis::~PointerAnalysis()
 void PointerAnalysis::destroy()
 {
     delete ptaCallGraph;
-    ptaCallGraph = nullptr;
+    ptaCallGraph = NULL;
 
     delete callGraphSCC;
-    callGraphSCC = nullptr;
+    callGraphSCC = NULL;
 
     delete stat;
-    stat = nullptr;
+    stat = NULL;
 
     delete typeSystem;
-    typeSystem = nullptr;
+    typeSystem = NULL;
 }
 
 /*!
@@ -113,7 +156,7 @@ void PointerAnalysis::destroy()
 void PointerAnalysis::initialize()
 {
 	assert(pag && "PAG has not been built!");
-	if (chgraph == nullptr) {
+	if (chgraph == NULL) {
 		if (LLVMModuleSet::getLLVMModuleSet()->allCTir()) {
 			DCHGraph *dchg = new DCHGraph(pag->getModule());
 			// TODO: we might want to have an option for extending.
@@ -133,15 +176,15 @@ void PointerAnalysis::initialize()
         pag->dump("pag_initial");
 
     // dump ICFG
-    if (Options::DumpICFG)
+    if (DumpICFG)
     	pag->getICFG()->dump("icfg_initial");
 
     // print to command line of the PAG graph
-    if (Options::PAGPrint)
+    if (PAGPrint)
         pag->print();
 
     /// initialise pta call graph for every pointer analysis instance
-    if(Options::EnableThreadCallGraph)
+    if(EnableThreadCallGraph)
     {
         ThreadCallGraph* cg = new ThreadCallGraph();
         ThreadCallGraphBuilder bd(cg, pag->getICFG());
@@ -156,7 +199,7 @@ void PointerAnalysis::initialize()
     callGraphSCCDetection();
 
     // dump callgraph
-	if (Options::CallGraphDotGraph)
+	if (CallGraphDotGraph)
 		getPTACallGraph()->dump("callgraph_initial");
 }
 
@@ -196,7 +239,7 @@ void PointerAnalysis::resetObjFieldSensitive()
  */
 bool PointerAnalysis::dumpGraph()
 {
-    return Options::PAGDotGraph;
+    return PAGDotGraph;
 }
 
 /*
@@ -226,33 +269,31 @@ void PointerAnalysis::finalize()
         pag->dump("pag_final");
 
     // dump ICFG
-    if (Options::DumpICFG){
-		pag->getICFG()->updateCallGraph(ptaCallGraph);
-		pag->getICFG()->dump("icfg_final");
-    }
+    if (DumpICFG)
+    	pag->getICFG()->dump("icfg_final");
 
     if (!DumpPAGFunctions.empty()) ExternalPAG::dumpFunctions(DumpPAGFunctions);
 
     /// Dump results
-    if (Options::PTSPrint)
+    if (PTSPrint)
     {
         dumpTopLevelPtsTo();
         //dumpAllPts();
         //dumpCPts();
     }
 
-    if (Options::TypePrint)
+    if (TYPEPrint)
         dumpAllTypes();
 
-    if(Options::PTSAllPrint)
+    if(PTSAllPrint)
         dumpAllPts();
 
-    if (Options::FuncPointerPrint)
+    if (FuncPointerPrint)
         printIndCSTargets();
 
     getPTACallGraph()->verifyCallGraph();
 
-	if (Options::CallGraphDotGraph)
+	if (CallGraphDotGraph)
 		getPTACallGraph()->dump("callgraph_final");
 
     // FSTBHC has its own TBHC-specific test validation.
@@ -260,7 +301,7 @@ void PointerAnalysis::finalize()
             && !SVFUtil::isa<FlowSensitiveTBHC>(this))
         validateTests();
 
-    if (!Options::UsePreCompFieldSensitive)
+    if (!UsePreCompFieldSensitive)
         resetObjFieldSensitive();
 }
 
@@ -287,7 +328,7 @@ void PointerAnalysis::validateTests()
 
 void PointerAnalysis::dumpAllTypes()
 {
-    for (OrderedNodeSet::iterator nIter = this->getAllValidPtrs().begin();
+    for (NodeSet::iterator nIter = this->getAllValidPtrs().begin();
             nIter != this->getAllValidPtrs().end(); ++nIter)
     {
         const PAGNode* node = getPAG()->getPAGNode(*nIter);
@@ -299,9 +340,9 @@ void PointerAnalysis::dumpAllTypes()
         outs() << "\nNodeID " << node->getId() << "\n";
 
         Type* type = node->getValue()->getType();
-        SymbolTableInfo::SymbolInfo()->printFlattenFields(type);
+        SymbolTableInfo::Symbolnfo()->printFlattenFields(type);
         if (PointerType* ptType = SVFUtil::dyn_cast<PointerType>(type))
-            SymbolTableInfo::SymbolInfo()->printFlattenFields(ptType->getElementType());
+            SymbolTableInfo::Symbolnfo()->printFlattenFields(ptType->getElementType());
     }
 }
 
@@ -440,7 +481,7 @@ void PointerAnalysis::resolveIndCalls(const CallBlockNode* cs, const PointsTo& t
             ii != ie; ii++)
     {
 
-        if(getNumOfResolvedIndCallEdge() >= Options::IndirectCallLimit)
+        if(getNumOfResolvedIndCallEdge() >= IndirectCallLimit)
         {
             wrnMsg("Resolved Indirect Call Edges are Out-Of-Budget, please increase the limit");
             return;
@@ -504,7 +545,7 @@ void PointerAnalysis::getVFnsFromPts(const CallBlockNode* cs, const PointsTo &ta
 
     if (chgraph->csHasVtblsBasedonCHA(SVFUtil::getLLVMCallSite(cs->getCallSite())))
     {
-        Set<const GlobalValue*> vtbls;
+        DenseSet<const GlobalValue*> vtbls;
         const VTableSet &chaVtbls = chgraph->getCSVtblsBasedonCHA(SVFUtil::getLLVMCallSite(cs->getCallSite()));
         for (PointsTo::iterator it = target.begin(), eit = target.end(); it != eit; ++it)
         {
@@ -552,7 +593,7 @@ void PointerAnalysis::resolveCPPIndCalls(const CallBlockNode* cs, const PointsTo
     assert(isVirtualCallSite(SVFUtil::getLLVMCallSite(cs->getCallSite())) && "not cpp virtual call");
 
     VFunSet vfns;
-    if (Options::ConnectVCallOnCHA)
+    if (connectVCallOnCHA)
         getVFnsFromCHA(cs, vfns);
     else
         getVFnsFromPts(cs, target, vfns);

@@ -36,7 +36,6 @@
 #include <assert.h>
 #include <stack>
 
-#include "Util/Options.h"
 #include "SVF-FE/CPPUtil.h"
 #include "SVF-FE/CHG.h"
 #include "SVF-FE/SymbolTableInfo.h"
@@ -49,6 +48,7 @@ using namespace SVFUtil;
 using namespace cppUtil;
 using namespace std;
 
+static llvm::cl::opt<bool> dumpCHA("dump-cha", llvm::cl::init(false), llvm::cl::desc("dump the class hierarchy graph"));
 
 const string pureVirtualFunName = "__cxa_pure_virtual";
 
@@ -112,7 +112,7 @@ void CHGraph::buildCHG()
     timeEnd = CLOCK_IN_MS();
     buildingCHGTime = (timeEnd - timeStart) / TIMEINTERVAL;
 
-    if (Options::DumpCHA)
+    if (dumpCHA)
         dump("cha");
 }
 
@@ -193,7 +193,7 @@ void CHGraph::buildInternalMaps()
 
 void CHGraph::connectInheritEdgeViaCall(const SVFFunction* callerfun, CallSite cs)
 {
-    if (getCallee(cs) == nullptr)
+    if (getCallee(cs) == NULL)
         return;
 
     const Function* callee = getCallee(cs)->getLLVMFun();
@@ -208,7 +208,7 @@ void CHGraph::connectInheritEdgeViaCall(const SVFFunction* callerfun, CallSite c
         //const Argument *consThisPtr = getConstructorThisPtr(caller);
         //bool samePtr = isSameThisPtrInConstructor(consThisPtr, csThisPtr);
         bool samePtrTrue = true;
-        if (csThisPtr != nullptr && samePtrTrue)
+        if (csThisPtr != NULL && samePtrTrue)
         {
             struct DemangledName basename = demangle(callee->getName().str());
             if (!SVFUtil::isCallSite(csThisPtr)  &&
@@ -287,7 +287,7 @@ CHNode *CHGraph::getNode(const string name) const
 {
     auto chNode = classNameToNodeMap.find(name);
     if (chNode != classNameToNodeMap.end()) return chNode->second;
-    else return nullptr;
+    else return NULL;
 }
 
 
@@ -382,18 +382,6 @@ const CHGraph::CHNodeSetTy& CHGraph::getInstancesAndDescendants(const string cla
         return classNameToInstAndDescsMap[className];
     }
 }
-
-
-void CHGraph::addFuncToFuncVector(CHNode::FuncVector &v, const SVFFunction *f) {
-    const auto *lf = f->getLLVMFun();
-    if (isCPPThunkFunction(lf)) {
-        if(const auto *tf = getThunkTarget(lf))
-            v.push_back(svfMod->getSVFFunction(tf));
-    } else {
-        v.push_back(f);
-    }
-}
-
 
 /*
  * do the following things:
@@ -493,7 +481,7 @@ void CHGraph::analyzeVTables(const Module &M)
                         }
                         const ConstantExpr *ce =
                             SVFUtil::dyn_cast<ConstantExpr>(vtbl->getOperand(i));
-                        assert(ce != nullptr && "item in vtable not constantexp or null");
+                        assert(ce != NULL && "item in vtable not constantexp or null");
                         u32_t opcode = ce->getOpcode();
                         assert(opcode == Instruction::IntToPtr ||
                                opcode == Instruction::BitCast);
@@ -520,7 +508,7 @@ void CHGraph::analyzeVTables(const Module &M)
                             if (const Function* f = SVFUtil::dyn_cast<Function>(bitcastValue))
                             {
                                 const SVFFunction* func = LLVMModuleSet::getLLVMModuleSet()->getSVFFunction(f);
-                                addFuncToFuncVector(virtualFunctions, func);
+                                virtualFunctions.push_back(func);
                                 if (func->getName().str().compare(pureVirtualFunName) == 0)
                                 {
                                     pure_abstract &= true;
@@ -546,7 +534,7 @@ void CHGraph::analyzeVTables(const Module &M)
                                                 SVFUtil::dyn_cast<Function>(aliasValue))
                                     {
                                         const SVFFunction* func = LLVMModuleSet::getLLVMModuleSet()->getSVFFunction(aliasFunc);
-                                        addFuncToFuncVector(virtualFunctions, func);
+                                        virtualFunctions.push_back(func);
                                     }
                                     else if (const ConstantExpr *aliasconst =
                                                  SVFUtil::dyn_cast<ConstantExpr>(aliasValue))
@@ -559,7 +547,7 @@ void CHGraph::analyzeVTables(const Module &M)
                                         assert(aliasbitcastfunc &&
                                                "aliased bitcast in vtable not a function");
                                         const SVFFunction* func = LLVMModuleSet::getLLVMModuleSet()->getSVFFunction(aliasbitcastfunc);
-                                        addFuncToFuncVector(virtualFunctions, func);
+                                        virtualFunctions.push_back(func);
                                     }
                                     else
                                     {
@@ -721,20 +709,6 @@ const CHGraph::CHNodeSetTy& CHGraph::getCSClasses(CallSite cs)
     }
 }
 
-static bool checkArgTypes(CallSite cs, const Function *fn) {
-
-    // here we skip the first argument (i.e., this pointer)
-    for (unsigned i = 1; i < cs.arg_size(); i++) {
-        auto cs_arg = cs.getArgOperand(i);
-        auto fn_arg = fn->getArg(i);
-        if (cs_arg->getType() != fn_arg->getType()) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 /*
  * Get virtual functions for callsite "cs" based on vtbls (calculated
  * based on pointsto set)
@@ -749,7 +723,7 @@ void CHGraph::getVFnsFromVtbls(CallSite cs, const VTableSet &vtbls, VFunSet &vir
     for (const GlobalValue *vt : vtbls)
     {
         const CHNode *child = getNode(getClassNameFromVtblObj(vt));
-        if (child == nullptr)
+        if (child == NULL)
             continue;
         CHNode::FuncVector vfns;
         child->getVirtualFunctions(idx, vfns);
@@ -760,12 +734,6 @@ void CHGraph::getVFnsFromVtbls(CallSite cs, const VTableSet &vtbls, VFunSet &vir
             if (cs.arg_size() == callee->arg_size() ||
                     (cs.getFunctionType()->isVarArg() && callee->isVarArg()))
             {
-
-                // if argument types do not match
-                // skip this one
-                if (!checkArgTypes(cs, callee->getLLVMFun()))
-                    continue;
-
                 DemangledName dname = demangle(callee->getName().str());
                 string calleeName = dname.funcName;
 
@@ -828,8 +796,8 @@ void CHGraph::buildCSToCHAVtblsAndVfnsMap()
 {
 
     for (SymbolTableInfo::CallSiteSet::const_iterator it =
-                SymbolTableInfo::SymbolInfo()->getCallSiteSet().begin(), eit =
-                SymbolTableInfo::SymbolInfo()->getCallSiteSet().end(); it != eit; ++it)
+                SymbolTableInfo::Symbolnfo()->getCallSiteSet().begin(), eit =
+                SymbolTableInfo::Symbolnfo()->getCallSiteSet().end(); it != eit; ++it)
     {
         CallSite cs = *it;
         if (!cppUtil::isVirtualCallSite(cs))
@@ -840,7 +808,7 @@ void CHGraph::buildCSToCHAVtblsAndVfnsMap()
         {
             const CHNode *child = *it;
             const GlobalValue *vtbl = child->getVTable();
-            if (vtbl != nullptr)
+            if (vtbl != NULL)
             {
                 vtbls.insert(vtbl);
             }
@@ -886,10 +854,6 @@ void CHGraph::dump(const std::string& filename)
     printCH();
 }
 
-void CHGraph::view()
-{
-    llvm::ViewGraph(this, "Class Hierarchy Graph");
-}
 
 namespace llvm
 {
@@ -922,10 +886,10 @@ struct DOTGraphTraits<CHGraph*> : public DefaultDOTGraphTraits
     {
         if (node->isPureAbstract())
         {
-            return "shape=tab";
+            return "shape=Mcircle";
         }
         else
-            return "shape=box";
+            return "shape=circle";
     }
 
     template<class EdgeIter>

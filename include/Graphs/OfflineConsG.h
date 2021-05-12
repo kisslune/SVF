@@ -46,8 +46,8 @@ class OfflineConsG: public ConstraintGraph
 
 public:
     typedef SCCDetection<OfflineConsG*> OSCC;
-    typedef Set<LoadCGEdge*> LoadEdges;
-    typedef Set<StoreCGEdge*> StoreEdges;
+    typedef std::set<LoadCGEdge*> LoadEdges;
+    typedef std::set<StoreCGEdge*> StoreEdges;
 
 protected:
     NodeSet refNodes;

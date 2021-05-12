@@ -5,7 +5,6 @@
  *      Author: Yulei Sui, Sen Ye
  */
 
-#include "Util/Options.h"
 #include "DDA/FlowDDA.h"
 #include "DDA/DDAClient.h"
 
@@ -13,6 +12,8 @@ using namespace std;
 using namespace SVF;
 using namespace SVFUtil;
 
+static llvm::cl::opt<unsigned long long> flowBudget("flowbg",  llvm::cl::init(10000),
+        llvm::cl::desc("Maximum step budget of flow-sensitive traversing"));
 
 /*!
  * Compute points-to set for queries
@@ -20,7 +21,7 @@ using namespace SVFUtil;
 void FlowDDA::computeDDAPts(NodeID id)
 {
     resetQuery();
-    LocDPItem::setMaxBudget(Options::FlowBudget);
+    LocDPItem::setMaxBudget(flowBudget);
 
     PAGNode* node = getPAG()->getPAGNode(id);
     LocDPItem dpm = getDPIm(node->getId(),getDefSVFGNode(node));
@@ -49,7 +50,7 @@ void FlowDDA::computeDDAPts(NodeID id)
 void FlowDDA::handleOutOfBudgetDpm(const LocDPItem& dpm)
 {
     DBOUT(DGENERAL,outs() << "~~~Out of budget query, downgrade to andersen analysis \n");
-    const PointsTo& anderPts = getAndersenAnalysis()->getPts(dpm.getCurNodeID());
+    PointsTo& anderPts = getAndersenAnalysis()->getPts(dpm.getCurNodeID());
     updateCachedPointsTo(dpm,anderPts);
     unionPts(dpm.getCurNodeID(),anderPts);
     addOutOfBudgetDpm(dpm);
@@ -160,7 +161,7 @@ bool FlowDDA::isHeapCondMemObj(const NodeID& var, const StoreSVFGNode*)
     {
 //        if(const Instruction* mallocSite = SVFUtil::dyn_cast<Instruction>(mem->getRefVal())) {
 //            const SVFFunction* fun = mallocSite->getParent()->getParent();
-//            const SVFFunction* curFun = store->getBB() ? store->getBB()->getParent() : nullptr;
+//            const SVFFunction* curFun = store->getBB() ? store->getBB()->getParent() : NULL;
 //            if(fun!=curFun)
 //                return true;
 //            if(_callGraphSCC->isInCycle(_callGraph->getCallGraphNode(fun)->getId()))

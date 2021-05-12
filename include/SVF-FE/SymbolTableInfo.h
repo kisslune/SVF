@@ -47,18 +47,18 @@ public:
     //{@
     /// llvm value to sym id map
     /// local (%) and global (@) identifiers are pointer types which have a value node id.
-    typedef OrderedMap<const Value *, SymID> ValueToIDMapTy;
+    typedef DenseMap<const Value *, SymID> ValueToIDMapTy;
     /// sym id to memory object map
-    typedef OrderedMap<SymID,MemObj*> IDToMemMapTy;
+    typedef DenseMap<SymID,MemObj*> IDToMemMapTy;
     /// function to sym id map
-    typedef OrderedMap<const Function *, SymID> FunToIDMapTy;
+    typedef DenseMap<const Function *, SymID> FunToIDMapTy;
     /// sym id to sym type map
-    typedef OrderedMap<SymID,SYMTYPE> IDToSymTyMapTy;
+    typedef DenseMap<SymID,SYMTYPE> IDToSymTyMapTy;
     /// struct type to struct info map
-    typedef OrderedMap<const Type*, StInfo*> TypeToFieldInfoMap;
-    typedef Set<CallSite> CallSiteSet;
-    typedef OrderedMap<const Instruction*,CallSiteID> CallSiteToIDMapTy;
-    typedef OrderedMap<CallSiteID,const Instruction*> IDToCallSiteMapTy;
+    typedef DenseMap<const Type*, StInfo*> TypeToFieldInfoMap;
+    typedef DenseSet<CallSite> CallSiteSet;
+    typedef DenseMap<const Instruction*,CallSiteID> CallSiteToIDMapTy;
+    typedef DenseMap<CallSiteID,const Instruction*> IDToCallSiteMapTy;
 
     //@}
 
@@ -76,7 +76,7 @@ private:
     CallSiteSet callSiteSet;
 
     // Singleton pattern here to enable instance of SymbolTableInfo can only be created once.
-    static SymbolTableInfo* symInfo;
+    static SymbolTableInfo* symlnfo;
 
     /// Module
     SVFModule* mod;
@@ -93,26 +93,27 @@ private:
     /// Whether to model constants
     bool modelConstants;
 
-    /// total number of symbols
-    SymID totalSymNum;
-
 protected:
     /// Constructor
-    SymbolTableInfo(void) :
-        modelConstants(false), maxStruct(nullptr), maxStSize(0), mod(nullptr), totalSymNum(0)
+    SymbolTableInfo() :
+        modelConstants(false), maxStruct(NULL), maxStSize(0)
     {
     }
 
 public:
+    /// Statistics
+    //@{
+    static SymID totalSymNum;
+    //@}
 
     /// Singleton design here to make sure we only have one instance during any analysis
     //@{
-    static SymbolTableInfo* SymbolInfo();
+    static SymbolTableInfo* Symbolnfo();
 
-    static void releaseSymbolInfo()
+    static void releaseSymbolnfo()
     {
-        delete symInfo;
-        symInfo = nullptr;
+        delete symlnfo;
+        symlnfo = NULL;
     }
     virtual ~SymbolTableInfo()
     {
@@ -149,7 +150,7 @@ public:
     /// Get target machine data layout
     inline static DataLayout* getDataLayout(Module* mod)
     {
-        if(dl==nullptr)
+        if(dl==NULL)
             return dl = new DataLayout(mod);
         return dl;
     }
@@ -422,11 +423,6 @@ public:
 
     /// Debug method
     void printFlattenFields(const Type* type);
-
-    static std::string toString(SYMTYPE symtype);
-
-    /// Another debug method
-    virtual void dump();
 
 protected:
     /// Collect the struct info

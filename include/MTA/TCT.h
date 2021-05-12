@@ -29,7 +29,7 @@ typedef GenericEdge<TCTNode> GenericTCTEdgeTy;
 class TCTEdge: public GenericTCTEdgeTy
 {
 public:
-    typedef Set<const Instruction*> CallInstSet;
+    typedef std::set<const Instruction*> CallInstSet;
     enum CEDGEK
     {
         ThreadCreateEdge
@@ -118,14 +118,14 @@ class TCT: public GenericThreadCreateTreeTy
 public:
     typedef TCTEdge::ThreadCreateEdgeSet ThreadCreateEdgeSet;
     typedef ThreadCreateEdgeSet::iterator TCTNodeIter;
-    typedef Set<const Function*> FunSet;
+    typedef std::set<const Function*> FunSet;
     typedef std::vector<const Instruction*> InstVec;
-    typedef Set<const Instruction*> InstSet;
-    typedef Set<const PTACallGraphNode*> PTACGNodeSet;
-    typedef Map<const CxtThread,TCTNode*> CxtThreadToNodeMap;
-    typedef Map<const CxtThread,CallStrCxt> CxtThreadToForkCxt;
-    typedef Map<const CxtThread,const Function*> CxtThreadToFun;
-    typedef Map<const Instruction*, const Loop*> InstToLoopMap;
+    typedef std::set<const Instruction*> InstSet;
+    typedef std::set<const PTACallGraphNode*> PTACGNodeSet;
+    typedef std::map<const CxtThread,TCTNode*> CxtThreadToNodeMap;
+    typedef std::map<const CxtThread,CallStrCxt> CxtThreadToForkCxt;
+    typedef std::map<const CxtThread,const Function*> CxtThreadToFun;
+    typedef std::map<const Instruction*, const Loop*> InstToLoopMap;
     typedef FIFOWorkList<CxtThreadProc> CxtThreadProcVec;
     typedef set<CxtThreadProc> CxtThreadProcSet;
     typedef SCCDetection<PTACallGraph*> ThreadCallGraphSCC;
@@ -320,7 +320,7 @@ public:
         InstToLoopMap::const_iterator it = joinSiteToLoopMap.find(join);
         if(it!=joinSiteToLoopMap.end())
             return it->second;
-        return nullptr;
+        return NULL;
     }
     /// Return true if a join instruction must be executed inside a loop
     bool isJoinMustExecutedInLoop(const Loop* lp,const Instruction* join);
@@ -455,7 +455,7 @@ private:
     void setMultiForkedAttrs(CxtThread& ct)
     {
         /// non-main thread
-        if(ct.getThread() != nullptr)
+        if(ct.getThread() != NULL)
         {
             ct.setInloop(isInLoopInstruction(ct.getThread()));
             ct.setIncycle(isInRecursion(ct.getThread()));
@@ -505,7 +505,7 @@ private:
     {
         if(tcgSCC)
             delete tcgSCC;
-        tcgSCC=nullptr;
+        tcgSCC=NULL;
     }
 
     FunSet entryFuncSet; /// Procedures that are neither called by other functions nor extern functions

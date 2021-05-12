@@ -47,18 +47,17 @@ typedef WPAFSSolver<SVFG*> WPASVFGFSSolver;
 class FlowSensitive : public WPASVFGFSSolver, public BVDataPTAImpl
 {
     friend class FlowSensitiveStat;
-protected:
+private:
     typedef SVFG::SVFGEdgeSetTy SVFGEdgeSetTy;
 
 public:
-    typedef BVDataPTAImpl::MutDFPTDataTy MutDFPTDataTy;
-    typedef BVDataPTAImpl::MutDFPTDataTy::DFPtsMap DFInOutMap;
-    typedef BVDataPTAImpl::MutDFPTDataTy::PtsMap PtsMap;
+    typedef BVDataPTAImpl::IncDFPTDataTy::DFPtsMap DFInOutMap;
+    typedef BVDataPTAImpl::IncDFPTDataTy::PtsMap PtsMap;
 
     /// Constructor
     FlowSensitive(PAG* _pag, PTATY type = FSSPARSE_WPA) : WPASVFGFSSolver(), BVDataPTAImpl(_pag, type)
     {
-        svfg = nullptr;
+        svfg = NULL;
         solveTime = sccTime = processTime = propagationTime = updateTime = 0;
         addrTime = copyTime = gepTime = loadTime = storeTime = phiTime = 0;
         updateCallGraphTime = directPropaTime = indirectPropaTime = 0;
@@ -73,15 +72,15 @@ public:
     /// Destructor
     virtual ~FlowSensitive()
     {
-        if (svfg != nullptr)
+        if (svfg != NULL)
             delete svfg;
-        svfg = nullptr;
+        svfg = NULL;
     }
 
     /// Create signle instance of flow-sensitive pointer analysis
     static FlowSensitive* createFSWPA(PAG* _pag)
     {
-        if (fspta == nullptr)
+        if (fspta == NULL)
         {
             fspta = new FlowSensitive(_pag);
             fspta->analyze();
@@ -94,7 +93,7 @@ public:
     {
         if (fspta)
             delete fspta;
-        fspta = nullptr;
+        fspta = NULL;
     }
 
     /// We start from here
@@ -243,7 +242,7 @@ protected:
     virtual void printCTirAliasStats(void);
 
     /// Fills may/noAliases for the location/pointer pairs in cmp.
-    virtual void countAliases(Set<std::pair<NodeID, NodeID>> cmp, unsigned *mayAliases, unsigned *noAliases);
+    virtual void countAliases(DenseSet<std::pair<NodeID, NodeID>> cmp, unsigned *mayAliases, unsigned *noAliases);
 
     SVFG* svfg;
     ///Get points-to set for a node from data flow IN/OUT set at a statement.
@@ -258,22 +257,20 @@ protected:
     }
     //@}
 
-    /// Get IN/OUT data flow map.
-    /// May only be called when the backing is MUTABLE.
-    ///@{
+    ///Get IN/OUT data flow map;
+    //@{
     inline const DFInOutMap& getDFInputMap() const
     {
-        return getMutDFPTDataTy()->getDFIn();
+        return getDFPTDataTy()->getDFIn();
     }
     inline const DFInOutMap& getDFOutputMap() const
     {
-        return getMutDFPTDataTy()->getDFOut();
+        return getDFPTDataTy()->getDFOut();
     }
-    ///@}
+    //@}
 
     static FlowSensitive* fspta;
     SVFGBuilder memSSA;
-    AndersenWaveDiff *ander;
 
     /// Statistics.
     //@{

@@ -180,13 +180,6 @@ public:
             }
         }
     }
-
-    inline bool operator==(const LocationSet& rhs) const
-    {
-        return this->fldIdx == rhs.fldIdx
-               && this->byteOffset == rhs.byteOffset
-               && this->numStridePair == rhs.numStridePair;
-    }
     //@}
 
     /// Get methods
@@ -287,12 +280,5 @@ private:
 };
 
 } // End namespace SVF
-
-template <> struct std::hash<SVF::LocationSet> {
-    size_t operator()(const SVF::LocationSet &ls) const {
-        SVF::Hash<std::pair<SVF::Size_t, SVF::Size_t>> h;
-        return h(std::make_pair(ls.getOffset(), ls.getByteOffset()));
-    }
-};
 
 #endif /* LOCATIONSET_H_ */

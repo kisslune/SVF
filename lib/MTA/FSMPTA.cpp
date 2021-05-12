@@ -5,7 +5,6 @@
  *      Author: Yulei Sui, Peng Di
  */
 
-#include "Util/Options.h"
 #include "MTA/FSMPTA.h"
 #include "MTA/MHP.h"
 #include "MTA/PCG.h"
@@ -13,10 +12,17 @@
 using namespace SVF;
 using namespace SVFUtil;
 
-FSMPTA* FSMPTA::mfspta = nullptr;
+FSMPTA* FSMPTA::mfspta = NULL;
 u32_t MTASVFGBuilder::numOfNewSVFGEdges = 0;
 u32_t MTASVFGBuilder::numOfRemovedSVFGEdges = 0;
 u32_t MTASVFGBuilder::numOfRemovedPTS = 0;
+
+static llvm::cl::opt<bool> UsePCG("pcgTDEdge", llvm::cl::init(false), llvm::cl::desc("Use PCG lock for non-sparsely adding SVFG edges"));
+static llvm::cl::opt<bool> IntraLock("intralockTDEdge", llvm::cl::init(true), llvm::cl::desc("Use simple intra-procedual lock for adding SVFG edges"));
+static llvm::cl::opt<bool> ReadPrecisionTDEdge("rpTDEdge", llvm::cl::init(false), llvm::cl::desc("perform read precision to refine SVFG edges"));
+
+static llvm::cl::opt<u32_t> AddModelFlag("addTDEdge", llvm::cl::init(0), llvm::cl::desc("Add thread SVFG edges with models: 0 Non Add Edge; 1 NonSparse; "
+        "2 All Optimisation; 3 No MHP; 4 No Alias; 5 No Lock; 6 No Read Precision."));
 
 /*!
  *
@@ -25,7 +31,7 @@ void MTASVFGBuilder::buildSVFG()
 {
     MemSSA* mssa = svfg->getMSSA();
     svfg->buildSVFG();
-    if (ADDEDGE_NOEDGE != Options::AddModelFlag)
+    if (ADDEDGE_NOEDGE != AddModelFlag)
     {
         DBOUT(DGENERAL, outs() << SVFUtil::pasMsg("FSMPTA adding edge\n"));
         DBOUT(DMTA, outs() << SVFUtil::pasMsg("FSMPTA adding edge\n"));
@@ -108,14 +114,14 @@ SVFGEdge*  MTASVFGBuilder::addTDEdges(NodeID srcId, NodeID dstId, PointsTo& pts)
     if(SVFGEdge* edge = svfg->hasThreadVFGEdge(srcNode,dstNode,SVFGEdge::TheadMHPIndirectVF))
     {
         assert(SVFUtil::isa<IndirectSVFGEdge>(edge) && "this should be a indirect value flow edge!");
-        return (SVFUtil::cast<IndirectSVFGEdge>(edge)->addPointsTo(pts) ? edge : nullptr);
+        return (SVFUtil::cast<IndirectSVFGEdge>(edge)->addPointsTo(pts) ? edge : NULL);
     }
     else
     {
         MTASVFGBuilder::numOfNewSVFGEdges++;
         ThreadMHPIndSVFGEdge* indirectEdge = new ThreadMHPIndSVFGEdge(srcNode,dstNode);
         indirectEdge->addPointsTo(pts);
-        return (svfg->addSVFGEdge(indirectEdge) ? indirectEdge : nullptr);
+        return (svfg->addSVFGEdge(indirectEdge) ? indirectEdge : NULL);
     }
 }
 
@@ -134,7 +140,7 @@ void MTASVFGBuilder::performRemovingMHPEdges()
         assert (n1->hasOutgoingEdge() && "n1 doesn't have out edge");
         assert (n2->hasIncomingEdge() && "n2 doesn't have in edge");
 
-        Set<SVFGEdge*> removededges;
+        std::set<SVFGEdge*> removededges;
         for (SVFGEdge::SVFGEdgeSetTy::iterator iter = n1->OutEdgeBegin(); iter != n1->OutEdgeEnd(); ++iter)
         {
             SVFGEdge* edge = *iter;
@@ -462,10 +468,10 @@ void MTASVFGBuilder::handleStoreLoad(const StmtSVFGNode* n1,const StmtSVFGNode* 
     const Instruction* i1 = n1->getInst();
     const Instruction* i2 = n2->getInst();
     /// MHP
-    if (ADDEDGE_NOMHP!=Options::AddModelFlag && !mhp->mayHappenInParallel(i1, i2))
+    if (ADDEDGE_NOMHP!=AddModelFlag && !mhp->mayHappenInParallel(i1, i2))
         return;
     /// Alias
-    if (ADDEDGE_NOALIAS!=Options::AddModelFlag && !pta->alias(n1->getPAGDstNodeID(), n2->getPAGSrcNodeID()))
+    if (ADDEDGE_NOALIAS!=AddModelFlag && !pta->alias(n1->getPAGDstNodeID(), n2->getPAGSrcNodeID()))
         return;
 
 
@@ -478,7 +484,7 @@ void MTASVFGBuilder::handleStoreLoad(const StmtSVFGNode* n1,const StmtSVFGNode* 
     /// This constrait is too strong. All cxt lock under different cxt cannot be identified.
 
 
-    if (ADDEDGE_NOLOCK!=Options::AddModelFlag && lockana->isProtectedByCommonLock(i1, i2))
+    if (ADDEDGE_NOLOCK!=AddModelFlag && lockana->isProtectedByCommonLock(i1, i2))
     {
         if (isTailofSpan(n1) && isHeadofSpan(n2))
             addTDEdges(n1->getId(), n2->getId(), pts);
@@ -496,17 +502,17 @@ void MTASVFGBuilder::handleStoreStore(const StmtSVFGNode* n1,const StmtSVFGNode*
     const Instruction* i1 = n1->getInst();
     const Instruction* i2 = n2->getInst();
     /// MHP
-    if (ADDEDGE_NOMHP!=Options::AddModelFlag && !mhp->mayHappenInParallel(i1, i2))
+    if (ADDEDGE_NOMHP!=AddModelFlag && !mhp->mayHappenInParallel(i1, i2))
         return;
     /// Alias
-    if (ADDEDGE_NOALIAS!=Options::AddModelFlag && !pta->alias(n1->getPAGDstNodeID(), n2->getPAGDstNodeID()))
+    if (ADDEDGE_NOALIAS!=AddModelFlag && !pta->alias(n1->getPAGDstNodeID(), n2->getPAGDstNodeID()))
         return;
 
     PointsTo pts = pta->getPts(n1->getPAGDstNodeID());
     pts &= pta->getPts(n2->getPAGDstNodeID());
 
     /// Lock
-    if (ADDEDGE_NOLOCK!=Options::AddModelFlag && lockana->isProtectedByCommonLock(i1, i2))
+    if (ADDEDGE_NOLOCK!=AddModelFlag && lockana->isProtectedByCommonLock(i1, i2))
     {
         if (isTailofSpan(n1) && isHeadofSpan(n2))
             addTDEdges(n1->getId(), n2->getId(), pts);
@@ -682,7 +688,7 @@ void MTASVFGBuilder::readPrecision()
 void MTASVFGBuilder::connectMHPEdges(PointerAnalysis* pta)
 {
     PCG* pcg;
-    if (ADDEDGE_NONSPARSE==Options::AddModelFlag)
+    if (ADDEDGE_NONSPARSE==AddModelFlag)
     {
         pcg= new PCG(pta);
         pcg->analyze();
@@ -702,9 +708,9 @@ void MTASVFGBuilder::connectMHPEdges(PointerAnalysis* pta)
         {
             const StmtSVFGNode* n2 = SVFUtil::cast<StmtSVFGNode>(*it2);
             const Instruction* i2 = n2->getInst();
-            if (ADDEDGE_NONSPARSE==Options::AddModelFlag)
+            if (ADDEDGE_NONSPARSE==AddModelFlag)
             {
-                if (Options::UsePCG)
+                if (UsePCG)
                 {
                     if (pcg->mayHappenInParallel(i1, i2) || mhp->mayHappenInParallel(i1, i2))
                         handleStoreLoadNonSparse(n1, n2, pta);
@@ -724,9 +730,9 @@ void MTASVFGBuilder::connectMHPEdges(PointerAnalysis* pta)
         {
             const StmtSVFGNode* n2 = SVFUtil::cast<StmtSVFGNode>(*it2);
             const Instruction* i2 = n2->getInst();
-            if (ADDEDGE_NONSPARSE == Options::AddModelFlag)
+            if (ADDEDGE_NONSPARSE == AddModelFlag)
             {
-                if (Options::UsePCG)
+                if (UsePCG)
                 {
                     if(pcg->mayHappenInParallel(i1, i2) || mhp->mayHappenInParallel(i1, i2))
                         handleStoreStoreNonSparse(n1, n2, pta);
@@ -743,7 +749,7 @@ void MTASVFGBuilder::connectMHPEdges(PointerAnalysis* pta)
         }
     }
 
-    if(Options::ReadPrecisionTDEdge && ADDEDGE_NORP!=Options::AddModelFlag)
+    if(ReadPrecisionTDEdge && ADDEDGE_NORP!=AddModelFlag)
     {
         DBOUT(DGENERAL,outs()<<"Read precision edge removing \n");
         DBOUT(DMTA,outs()<<"Read precision edge removing \n");

@@ -25,10 +25,10 @@ class MTAStat : public PTAStat
 {
 
 public:
-    typedef Set<const Instruction*> InstSet;
+    typedef std::set<const Instruction*> InstSet;
 
     /// Constructor
-    MTAStat():PTAStat(nullptr),TCTTime(0),MHPTime(0),FSMPTATime(0),AnnotationTime(0)
+    MTAStat():PTAStat(NULL),TCTTime(0),MHPTime(0),FSMPTATime(0),AnnotationTime(0)
     {
     }
     /// Statistics for thread call graph

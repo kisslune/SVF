@@ -31,6 +31,7 @@
 #ifndef INCLUDE_UTIL_SVFBASICTYPES_H_
 #define INCLUDE_UTIL_SVFBASICTYPES_H_
 
+#include <llvm/ADT/DenseSet.h>		// for dense map, set
 #include <llvm/ADT/SparseBitVector.h>	// for points-to
 #include <llvm/Support/raw_ostream.h>	// for output
 #include <llvm/Support/CommandLine.h>	// for command line options
@@ -39,38 +40,12 @@
 #include <vector>
 #include <list>
 #include <set>
-#include <unordered_set>
 #include <map>
-#include <unordered_map>
 #include <stack>
 #include <deque>
 
 namespace SVF
 {
-
-/// provide extra hash function for std::pair handling
-template <class T> struct Hash;
-
-template <class S, class T> struct Hash<std::pair<S, T>> {
-    // Pairing function from: http://szudzik.com/ElegantPairing.pdf
-    static size_t szudzik(size_t a, size_t b)
-    {
-        return a > b ? b * b + a : a * a + a + b;
-    }
-
-    size_t operator()(const std::pair<S, T> &t) const {
-        Hash<decltype(t.first)> first;
-        Hash<decltype(t.second)> second;
-        return szudzik(first(t.first), second(t.second));
-    }
-};
-
-template <class T> struct Hash {
-    size_t operator()(const T &t) const {
-        std::hash<T> h;
-        return h(t);
-    }
-};
 
 typedef unsigned u32_t;
 typedef unsigned long long u64_t;
@@ -82,44 +57,23 @@ typedef u32_t EdgeID;
 typedef unsigned SymID;
 typedef unsigned CallSiteID;
 typedef unsigned ThreadID;
-typedef unsigned Version;
 
 typedef llvm::SparseBitVector<> NodeBS;
 typedef NodeBS PointsTo;
 typedef PointsTo AliasSet;
 
-template <typename Key, typename Hash = Hash<Key>, typename KeyEqual = std::equal_to<Key>,
-          typename Allocator = std::allocator<Key>> 
-using Set = std::unordered_set<Key, Hash, KeyEqual, Allocator>;
-
-template<typename Key, typename Value, typename Hash = Hash<Key>,
-    typename KeyEqual = std::equal_to<Key>,
-    typename Allocator = std::allocator<std::pair<const Key, Value>>>
-using Map = std::unordered_map<Key, Value, Hash, KeyEqual, Allocator>;
-
-template<typename Key, typename Compare = std::less<Key>, typename Allocator = std::allocator<Key>>
-using OrderedSet = std::set<Key, Compare, Allocator>;
-
-template<typename Key, typename Value, typename Compare = std::less<Key>,
-         typename Allocator = std::allocator<std::pair<const Key, Value>>>
-using OrderedMap = std::map<Key, Value, Compare, Allocator>;
-
-template <typename T, unsigned N>
-using SmallVector = llvm::SmallVector<T, N>;
-
 typedef std::pair<NodeID, NodeID> NodePair;
-typedef std::pair<NodeID, Version> VersionedVar;
-typedef OrderedSet<NodeID> OrderedNodeSet;
-typedef Set<NodeID> NodeSet;
-typedef Set<NodePair> NodePairSet;
-typedef Map<NodePair,NodeID> NodePairMap;
+typedef std::set<NodeID> NodeSet;
+typedef llvm::DenseSet<NodeID> DenseNodeSet;
+typedef llvm::DenseSet<NodePair,llvm::DenseMapInfo<std::pair<NodeID,NodeID> > > NodePairSet;
+typedef llvm::DenseMap<NodePair,NodeID,llvm::DenseMapInfo<std::pair<NodeID,NodeID> > > NodePairMap;
 typedef std::vector<NodeID> NodeVector;
 typedef std::vector<EdgeID> EdgeVector;
 typedef std::stack<NodeID> NodeStack;
 typedef std::list<NodeID> NodeList;
 typedef std::deque<NodeID> NodeDeque;
-typedef SmallVector<u32_t,16> SmallVector16;
-typedef SmallVector<u32_t,8> SmallVector8;
+typedef llvm::SmallVector<u32_t,16> SmallVector16;
+typedef llvm::SmallVector<u32_t,8> SmallVector8;
 typedef NodeSet EdgeSet;
 typedef SmallVector16 CallStrCxt;
 typedef llvm::StringMap<u32_t> StringMap;
@@ -175,7 +129,7 @@ private:
     GNodeK kind;	///< Type of this SVFValue
 public:
     /// Constructor
-    SVFValue(const llvm::StringRef& val, SVFValKind k): value(val), kind(k)
+    SVFValue(const std::string& val, SVFValKind k): value(val), kind(k)
     {
     }
 
@@ -234,27 +188,5 @@ public:
 };
 
 } // End namespace SVF
-
-
-/// Specialise hash for SmallVectors.
-template <typename T, unsigned N>
-struct std::hash<SVF::SmallVector<T, N>>
-{
-    size_t operator()(const SVF::SmallVector<T, N> &sv) const {
-        if (sv.empty()) return 0;
-        if (sv.size() == 1) return sv[0];
-
-        // Iterate and accumulate the hash.
-        size_t hash = 0;
-        SVF::Hash<std::pair<T, size_t>> hts;
-        std::hash<T> ht;
-        for (const T &t : sv)
-        {
-            hash = hts(std::make_pair(ht(t), hash));
-        }
-
-        return hash;
-    }
-};
 
 #endif /* INCLUDE_UTIL_SVFBASICTYPES_H_ */

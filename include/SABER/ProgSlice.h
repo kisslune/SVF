@@ -42,10 +42,10 @@ class ProgSlice
 {
 
 public:
-    typedef Set<const SVFGNode*> SVFGNodeSet;
-    typedef SVFGNodeSet::const_iterator SVFGNodeSetIter;
+    typedef std::set<const SVFGNode*> SVFGNodeSet;
+    typedef SVFGNodeSet::iterator SVFGNodeSetIter;
     typedef PathCondAllocator::Condition Condition;
-    typedef Map<const SVFGNode*, Condition*> SVFGNodeToCondMap; 	///< map a SVFGNode to its condition during value-flow guard computation
+    typedef std::map<const SVFGNode*, Condition*> SVFGNodeToCondMap; 	///< map a SVFGNode to its condition during value-flow guard computation
 
     typedef FIFOWorkList<const SVFGNode*> VFWorkList;		    ///< worklist for value-flow guard computation
     typedef FIFOWorkList<const BasicBlock*> CFWorkList;	///< worklist for control-flow guard computation
@@ -53,7 +53,7 @@ public:
     /// Constructor
     ProgSlice(const SVFGNode* src, PathCondAllocator* pa, const SVFG* graph):
         root(src), partialReachable(false), fullReachable(false), reachGlob(false),
-        pathAllocator(pa), _curSVFGNode(nullptr), finalCond(pa->getFalseCond()), svfg(graph)
+        pathAllocator(pa), _curSVFGNode(NULL), finalCond(pa->getFalseCond()), svfg(graph)
     {
     }
 
@@ -202,7 +202,7 @@ public:
     /// Annotate program according to final condition
     void annotatePaths();
 
-protected:
+private:
     inline const SVFG* getSVFG() const
     {
         return svfg;
@@ -263,9 +263,10 @@ protected:
         const ICFGNode* icfgNode = node->getICFGNode();
         if(SVFUtil::isa<NullPtrSVFGNode>(node) == false)
         {
+            assert(!SVFUtil::isa<GlobalBlockNode>(icfgNode) && "this SVFG node should be in a basic block");
             return icfgNode->getBB();
         }
-        return nullptr;
+        return NULL;
     }
 
     /// Get/set current SVFG node

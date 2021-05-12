@@ -35,8 +35,8 @@
 #include "Graphs/GraphPrinter.h"
 #include "Util/Casting.h"
 #include <llvm/ADT/SmallVector.h>		// for small vector
-#include <llvm/ADT/SparseBitVector.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/CallSite.h>
 #include <llvm/IR/InstVisitor.h>	// for instruction visitor
 #include <llvm/IR/InstIterator.h>	// for inst iteration
 #include <llvm/IR/GetElementPtrTypeIterator.h>	//for gep iterator
@@ -60,9 +60,6 @@
 #include <llvm/Transforms/Utils/Local.h>	// for FindDbgAddrUses
 #include <llvm/IR/DebugInfo.h>
 
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/CFG.h"
-
 namespace SVF
 {
 
@@ -77,7 +74,7 @@ typedef llvm::Function Function;
 typedef llvm::BasicBlock BasicBlock;
 typedef llvm::Value Value;
 typedef llvm::Instruction Instruction;
-typedef llvm::CallBase CallBase;
+typedef llvm::CallSite CallSite;
 typedef llvm::GlobalObject GlobalObject;
 typedef llvm::GlobalValue GlobalValue;
 typedef llvm::GlobalVariable GlobalVariable;
@@ -87,11 +84,7 @@ typedef llvm::User User;
 typedef llvm::Use Use;
 typedef llvm::Loop Loop;
 typedef llvm::LoopInfo LoopInfo;
-#if LLVM_VERSION_MAJOR >= 12
-    typedef llvm::UnifyFunctionExitNodesLegacyPass UnifyFunctionExitNodes;
-#else
-    typedef llvm::UnifyFunctionExitNodes UnifyFunctionExitNodes;
-#endif
+typedef llvm::UnifyFunctionExitNodes UnifyFunctionExitNodes;
 typedef llvm::ModulePass ModulePass;
 typedef llvm::AnalysisUsage AnalysisUsage;
 
@@ -108,8 +101,6 @@ typedef llvm::ArrayType ArrayType;
 typedef llvm::PointerType PointerType;
 typedef llvm::FunctionType FunctionType;
 typedef llvm::VectorType VectorType;
-typedef llvm::MetadataAsValue MetadataAsValue;
-typedef llvm::BlockAddress BlockAddress;
 
 /// LLVM data layout
 typedef llvm::DataLayout DataLayout;
@@ -194,11 +185,7 @@ typedef llvm::LoopInfoWrapperPass LoopInfoWrapperPass;
 
 /// LLVM Iterators
 typedef llvm::inst_iterator inst_iterator;
-#if LLVM_VERSION_MAJOR >= 11
-    typedef llvm::const_succ_iterator succ_const_iterator;
-#else
-    typedef llvm::succ_const_iterator succ_const_iterator;
-#endif
+typedef llvm::succ_const_iterator succ_const_iterator;
 typedef llvm::const_inst_iterator const_inst_iterator;
 typedef llvm::const_pred_iterator const_pred_iterator;
 typedef llvm::gep_type_iterator gep_type_iterator;
@@ -221,6 +208,21 @@ typedef llvm::DINodeArray DINodeArray;
 typedef llvm::DITypeRefArray DITypeRefArray;
 namespace dwarf = llvm::dwarf;
 
+/// LLVM containers
+template <typename T>
+using DenseMapInfo = llvm::DenseMapInfo<T>;
+
+template <typename KeyT, typename ValueT>
+using DenseMapPair = llvm::detail::DenseMapPair<KeyT, ValueT>;
+
+template <typename KeyT, typename ValueT,
+          typename KeyInfoT = DenseMapInfo<KeyT>,
+          typename BucketT = DenseMapPair<KeyT, ValueT>>
+using DenseMap = llvm::DenseMap<KeyT, ValueT, KeyInfoT, BucketT>;
+
+template <typename ValueT, typename ValueInfoT = DenseMapInfo<ValueT>>
+using DenseSet = llvm::DenseSet<ValueT, ValueInfoT>;
+
 class SVFFunction : public SVFValue
 {
 private:
@@ -229,7 +231,7 @@ private:
     Function* fun;
 public:
     SVFFunction(const std::string& val): SVFValue(val,SVFValue::SVFFunc),
-        isDecl(false), isIntri(false), fun(nullptr)
+        isDecl(false), isIntri(false), fun(NULL)
     {
     }
 
@@ -263,12 +265,6 @@ public:
         return getLLVMFun()->isVarArg();
     }
 
-    // Dump Control Flow Graph of llvm function, with instructions
-    void viewCFG();
-
-    // Dump Control Flow Graph of llvm function, without instructions
-    void viewCFGOnly();
-
 };
 
 class SVFGlobal : public SVFValue
@@ -301,61 +297,6 @@ public:
 
 };
 
-class CallSite {
-private:
-    CallBase *CB;
-public:
-    CallSite(Instruction *I) : CB(SVFUtil::dyn_cast<CallBase>(I)) {}
-    CallSite(Value *I) : CB(SVFUtil::dyn_cast<CallBase>(I)) {}
-
-    CallBase *getInstruction() const { return CB; }
-    using arg_iterator = User::const_op_iterator;
-    Value *getArgument(unsigned ArgNo) const { return CB->getArgOperand(ArgNo);}
-    Type *getType() const { return CB->getType(); }
-    User::const_op_iterator arg_begin() const { return CB->arg_begin();}
-    User::const_op_iterator arg_end() const { return CB->arg_end();}
-    unsigned arg_size() const { return CB->arg_size(); }
-    bool arg_empty() const { return CB->arg_empty(); }
-    Value *getArgOperand(unsigned i) const { return CB->getArgOperand(i); }
-    unsigned getNumArgOperands() const { return CB->getNumArgOperands(); }
-    Function *getCalledFunction() const { return CB->getCalledFunction(); }
-    Value *getCalledValue() const { return CB->getCalledOperand(); }
-    Function *getCaller() const { return CB->getCaller(); }
-    FunctionType *getFunctionType() const { return CB->getFunctionType(); }
-    bool paramHasAttr(unsigned ArgNo, llvm::Attribute::AttrKind Kind) const { return CB->paramHasAttr(ArgNo, Kind); }
-
-    bool operator==(const CallSite &CS) const { return CB == CS.CB; }
-    bool operator!=(const CallSite &CS) const { return CB != CS.CB; }
-    bool operator<(const CallSite &CS) const {
-        return getInstruction() < CS.getInstruction();
-    }
-
-};
-
-template <typename F, typename S>
-raw_ostream& operator<< (raw_ostream &o, const std::pair<F, S> &var)
-{
-    o << "<" << var.first << ", " << var.second << ">";
-    return o;
-}
-
 } // End namespace SVF
-
-/// Specialise hash for CallSites.
-template <> struct std::hash<SVF::CallSite> {
-    size_t operator()(const SVF::CallSite &cs) const {
-        std::hash<SVF::Instruction *> h;
-        return h(cs.getInstruction());
-    }
-};
-
-/// Specialise hash for SparseBitVectors.
-template <> struct std::hash<llvm::SparseBitVector<>>
-{
-    size_t operator()(const llvm::SparseBitVector<> &sbv) const {
-        SVF::Hash<std::pair<std::pair<size_t, size_t>, size_t>> h;
-        return h(std::make_pair(std::make_pair(sbv.count(), sbv.find_first()), sbv.find_last()));
-    }
-};
 
 #endif /* BASICTYPES_H_ */

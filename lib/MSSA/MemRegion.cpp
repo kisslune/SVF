@@ -27,7 +27,6 @@
  *      Author: Yulei Sui
  */
 
-#include "Util/Options.h"
 #include "Util/SVFModule.h"
 #include "MSSA/MemRegion.h"
 #include "MSSA/MSSAMuChi.h"
@@ -39,6 +38,8 @@ using namespace SVFUtil;
 Size_t MemRegion::totalMRNum = 0;
 Size_t MRVer::totalVERNum = 0;
 
+static llvm::cl::opt<bool> IgnoreDeadFun("mssa-ignoreDeadFun", llvm::cl::init(false),
+        llvm::cl::desc("Don't construct memory SSA for deadfunction"));
 
 /*!
  * Clean up memory
@@ -53,9 +54,9 @@ void MRGenerator::destroy()
     }
 
     delete callGraphSCC;
-    callGraphSCC = nullptr;
-    callGraph = nullptr;
-    pta = nullptr;
+    callGraphSCC = NULL;
+    callGraph = NULL;
+    pta = NULL;
 }
 
 /*!
@@ -105,8 +106,8 @@ void MRGenerator::collectGlobals()
         {
             if (obj->getMemObj()->isGlobalObj())
             {
-                allGlobals.set(nIter->first);
-                allGlobals |= CollectPtsChain(nIter->first);
+                allGlobals.set(nIter->getFirst());
+                allGlobals |= CollectPtsChain(nIter->getFirst());
             }
         }
     }
@@ -155,7 +156,7 @@ void MRGenerator::collectModRefForLoadStore()
         const SVFFunction& fun = **fi;
 
         /// if this function does not have any caller, then we do not care its MSSA
-        if (Options::IgnoreDeadFun && isDeadFunction(fun.getLLVMFun()))
+        if (IgnoreDeadFun && isDeadFunction(fun.getLLVMFun()))
             continue;
 
         for (Function::const_iterator iter = fun.getLLVMFun()->begin(), eiter = fun.getLLVMFun()->end();
@@ -233,7 +234,7 @@ void MRGenerator::collectModRefForCall()
 
     DBOUT(DGENERAL, outs() << pasMsg("\t\tAdd PointsTo to Callsites \n"));
 
-    for (CallSite cs : SymbolTableInfo::SymbolInfo()->getCallSiteSet())
+    for (CallSite cs : SymbolTableInfo::Symbolnfo()->getCallSiteSet())
     {
         const CallBlockNode* callBlockNode = pta->getPAG()->getICFG()->getCallBlockNode(cs.getInstruction());
         if(hasRefSideEffectOfCallSite(callBlockNode))
@@ -475,7 +476,7 @@ void MRGenerator::collectCallSitePts(const CallBlockNode* cs)
     while(!worklist.empty())
     {
         NodeID nodeId = worklist.pop();
-        const PointsTo& tmp = pta->getPts(nodeId);
+        PointsTo& tmp = pta->getPts(nodeId);
         for(PointsTo::iterator it = tmp.begin(), eit = tmp.end(); it!=eit; ++it)
             argsPts |= CollectPtsChain(*it);
     }
@@ -488,7 +489,7 @@ void MRGenerator::collectCallSitePts(const CallBlockNode* cs)
         const PAGNode* node = pta->getPAG()->getCallSiteRet(retBlockNode);
         if(node->isPointer())
         {
-            const PointsTo& tmp = pta->getPts(node->getId());
+            PointsTo& tmp = pta->getPts(node->getId());
             for(PointsTo::iterator it = tmp.begin(), eit = tmp.end(); it!=eit; ++it)
                 retPts |= CollectPtsChain(*it);
         }
@@ -518,7 +519,7 @@ NodeBS& MRGenerator::CollectPtsChain(NodeID id)
         while(!worklist.empty())
         {
             NodeID nodeId = worklist.pop();
-            const PointsTo& tmp = pta->getPts(nodeId);
+            PointsTo& tmp = pta->getPts(nodeId);
             for(PointsTo::iterator it = tmp.begin(), eit = tmp.end(); it!=eit; ++it)
             {
                 pts |= CollectPtsChain(*it);

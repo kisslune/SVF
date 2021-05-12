@@ -28,9 +28,9 @@ llvm::cl::list<std::string> DumpPAGFunctions("dump-function-pags",
         llvm::cl::CommaSeparated);
 
 
-Map<const SVFFunction*, Map<int, PAGNode *>>
+DenseMap<const SVFFunction*, DenseMap<int, PAGNode *>>
         ExternalPAG::functionToExternalPAGEntries;
-Map<const SVFFunction*, PAGNode *> ExternalPAG::functionToExternalPAGReturns;
+DenseMap<const SVFFunction*, PAGNode *> ExternalPAG::functionToExternalPAGReturns;
 
 std::vector<std::pair<std::string, std::string>>
         ExternalPAG::parseExternalPAGs(llvm::cl::list<std::string> &extpagsArgs)
@@ -74,12 +74,11 @@ bool ExternalPAG::connectCallsiteToExternalPAG(CallSite *cs)
     PAG *pag = PAG::getPAG();
 
     Function* function = cs->getCalledFunction();
-    std::string functionName = function->getName().str();
-
+    std::string functionName = function->getName();
     const SVFFunction* svfFun = LLVMModuleSet::getLLVMModuleSet()->getSVFFunction(function);
     if (!hasExternalPAG(svfFun)) return false;
 
-    Map<int, PAGNode*> argNodes =
+    DenseMap<int, PAGNode*> argNodes =
         functionToExternalPAGEntries[svfFun];
     PAGNode *retNode = functionToExternalPAGReturns[svfFun];
 
@@ -90,7 +89,7 @@ bool ExternalPAG::connectCallsiteToExternalPAG(CallSite *cs)
         // Does it actually return a pointer?
         if (SVFUtil::isa<PointerType>(function->getReturnType()))
         {
-            if (retNode != nullptr)
+            if (retNode != NULL)
             {
                 CallBlockNode* icfgNode = pag->getICFG()->getCallBlockNode(cs->getInstruction());
                 pag->addRetPE(retNode->getId(), dstrec, icfgNode);
@@ -258,9 +257,9 @@ void ExternalPAG::dumpFunctions(std::vector<std::string> functions)
     PAG *pag = PAG::getPAG();
 
     // Naive: first map functions to entries in PAG, then dump them.
-    Map<const SVFFunction*, std::vector<PAGNode *>> functionToPAGNodes;
+    DenseMap<const SVFFunction*, std::vector<PAGNode *>> functionToPAGNodes;
 
-    Set<PAGNode *> callDsts;
+    DenseSet<PAGNode *> callDsts;
     for (PAG::iterator it = pag->begin(); it != pag->end(); ++it)
     {
         PAGNode *currNode = it->second;
@@ -276,10 +275,10 @@ void ExternalPAG::dumpFunctions(std::vector<std::string> functions)
             :: Function* currFunction =
                 static_cast<const CallInst *>(inst)->getCalledFunction();
 
-            if (currFunction != nullptr)
+            if (currFunction != NULL)
             {
                 // Otherwise, it would be an indirect call which we don't want.
-                std::string currFunctionName = currFunction->getName().str();
+                std::string currFunctionName = currFunction->getName();
 
                 if (std::find(functions.begin(), functions.end(),
                               currFunctionName) != functions.end())
@@ -301,16 +300,16 @@ void ExternalPAG::dumpFunctions(std::vector<std::string> functions)
             ++it)
     {
         const SVFFunction* function = it->first;
-        std::string functionName = it->first->getName().str();
+        std::string functionName = it->first->getName();
 
         // The final nodes and edges we will print.
-        Set<PAGNode *> nodes;
-        Set<PAGEdge *> edges;
+        DenseSet<PAGNode *> nodes;
+        DenseSet<PAGEdge *> edges;
         // The search stack.
         std::stack<PAGNode *> todoNodes;
         // The arguments to the function.
         std::vector<PAGNode *> argNodes = it->second;
-        PAGNode *retNode = nullptr;
+        PAGNode *retNode = NULL;
 
 
         outs() << "PAG for function: " << functionName << "\n";
@@ -378,7 +377,7 @@ bool ExternalPAG::addExternalPAG(const SVFFunction* function)
 {
     // The function does not exist in the module - bad arg?
     // TODO: maybe some warning?
-    if (function == nullptr) return false;
+    if (function == NULL) return false;
 
     PAG *pag = PAG::getPAG();
     if (hasExternalPAG(function)) return false;
@@ -395,7 +394,7 @@ bool ExternalPAG::addExternalPAG(const SVFFunction* function)
     //        : to map function names to the return node.
 
     // To create the new edges.
-    Map<NodeID, PAGNode *> extToNewNodes;
+    DenseMap<NodeID, PAGNode *> extToNewNodes;
 
     // Add the value nodes.
     for (auto extNodeIt = this->getValueNodes().begin();
@@ -442,7 +441,7 @@ bool ExternalPAG::addExternalPAG(const SVFFunction* function)
         }
         else if (extEdgeType == "store")
         {
-            pag->addStorePE(srcId, dstId, nullptr);
+            pag->addStorePE(srcId, dstId, NULL);
         }
         else if (extEdgeType == "gep")
         {
@@ -454,11 +453,11 @@ bool ExternalPAG::addExternalPAG(const SVFFunction* function)
         }
         else if (extEdgeType == "call")
         {
-            pag->addEdge(srcNode, dstNode, new CallPE(srcNode, dstNode, nullptr));
+            pag->addEdge(srcNode, dstNode, new CallPE(srcNode, dstNode, NULL));
         }
         else if (extEdgeType == "ret")
         {
-            pag->addEdge(srcNode, dstNode, new RetPE(srcNode, dstNode, nullptr));
+            pag->addEdge(srcNode, dstNode, new RetPE(srcNode, dstNode, NULL));
         }
         else if (extEdgeType == "cmp")
         {
@@ -479,7 +478,7 @@ bool ExternalPAG::addExternalPAG(const SVFFunction* function)
     }
 
     // Record the arg nodes.
-    Map<int, PAGNode *> argNodes;
+    DenseMap<int, PAGNode *> argNodes;
     for (auto argNodeIt = this->getArgNodes().begin();
             argNodeIt != this->getArgNodes().end(); ++argNodeIt)
     {

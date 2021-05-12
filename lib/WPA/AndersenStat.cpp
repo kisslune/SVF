@@ -45,7 +45,7 @@ const char* AndersenStat::CollapseTime = "CollapseTime";
 /*!
  * Constructor
  */
-AndersenStat::AndersenStat(AndersenBase* p): PTAStat(p),pta(p)
+AndersenStat::AndersenStat(Andersen* p): PTAStat(p),pta(p)
 {
     _NumOfNullPtr = 0;
     _NumOfConstantPtr= 0;
@@ -61,13 +61,13 @@ void AndersenStat::collectCycleInfo(ConstraintGraph* consCG)
     _NumOfCycles = 0;
     _NumOfPWCCycles = 0;
     _NumOfNodesInCycles = 0;
-    NodeSet repNodes;
+    DenseNodeSet repNodes;
     repNodes.clear();
     for(ConstraintGraph::iterator it = consCG->begin(), eit = consCG->end(); it!=eit; ++it)
     {
         // sub nodes have been removed from the constraint graph, only rep nodes are left.
         NodeID repNode = consCG->sccRepNode(it->first);
-        NodeBS& subNodes = consCG->sccSubNodes(repNode);
+        NodeBS& subNodes = pta->sccSubNodes(repNode);
         NodeBS clone = subNodes;
         for (NodeBS::iterator it = subNodes.begin(), eit = subNodes.end(); it != eit; ++it)
         {
@@ -232,7 +232,7 @@ void AndersenStat::statNullPtr()
         if (inComingStore.empty()==false || outGoingLoad.empty()==false)
         {
             ///TODO: change the condition here to fetch the points-to set
-            const PointsTo& pts = pta->getPts(pagNodeId);
+            PointsTo& pts = pta->getPts(pagNodeId);
             if (pta->containBlackHoleNode(pts))
                 _NumOfBlackholePtr++;
 
@@ -273,7 +273,7 @@ void AndersenStat::statNullPtr()
 void AndersenStat::performStat()
 {
 
-    assert(SVFUtil::isa<AndersenBase>(pta) && "not an andersen pta pass!! what else??");
+    assert(SVFUtil::isa<Andersen>(pta) && "not an andersen pta pass!! what else??");
     endClk();
 
     PAG* pag = pta->getPAG();
@@ -293,7 +293,7 @@ void AndersenStat::performStat()
             iter != eiter; ++iter)
     {
         NodeID node = iter->first;
-        const PointsTo& pts = pta->getPts(node);
+        PointsTo& pts = pta->getPts(node);
         u32_t size = pts.count();
         totalPointers++;
         totalPtsSize+=size;

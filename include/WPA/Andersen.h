@@ -42,87 +42,29 @@ namespace SVF
 
 class PTAType;
 class SVFModule;
-
 /*!
- * Abstract class of inclusion-based Pointer Analysis
+ * Inclusion-based Pointer Analysis
  */
 typedef WPASolver<ConstraintGraph*> WPAConstraintSolver;
 
-class AndersenBase:  public WPAConstraintSolver, public BVDataPTAImpl
+class Andersen:  public WPAConstraintSolver, public BVDataPTAImpl
 {
+
+
 public:
+    typedef SCCDetection<ConstraintGraph*> CGSCC;
+    typedef DenseMap<CallSite, NodeID> CallSite2DummyValPN;
 
-    /// Constructor
-	AndersenBase(PAG* _pag, PTATY type = Andersen_BASE, bool alias_check = true)
-        :  BVDataPTAImpl(_pag, type, alias_check), consCG(nullptr)
-    {
-        iterationForPrintStat = OnTheFlyIterBudgetForStat;
-    }
-
-    /// Destructor
-    virtual ~AndersenBase()
-    {
-        if (consCG != nullptr)
-            delete consCG;
-        consCG = nullptr;
-    }
-
-    /// Andersen analysis
-    virtual void analyze();
-
-    /// Initialize analysis
-    virtual void initialize();
-
-    /// Finalize analysis
-    virtual void finalize();
-
-    /// Implement it in child class to update call graph
-    virtual inline bool updateCallGraph(const CallSiteToFunPtrMap&)
-    {
-        return false;
-    }
-
-    /// Methods for support type inquiry through isa, cast, and dyn_cast:
-    //@{
-    static inline bool classof(const AndersenBase *)
-    {
-        return true;
-    }
-    static inline bool classof(const PointerAnalysis *pta)
-    {
-        return ( pta->getAnalysisTy() == Andersen_BASE
-				|| pta->getAnalysisTy() == Andersen_WPA
-                || pta->getAnalysisTy() == AndersenLCD_WPA
-                || pta->getAnalysisTy() == AndersenHCD_WPA
-                || pta->getAnalysisTy() == AndersenHLCD_WPA
-                || pta->getAnalysisTy() == AndersenWaveDiff_WPA
-                || pta->getAnalysisTy() == AndersenWaveDiffWithType_WPA
-                || pta->getAnalysisTy() == AndersenSCD_WPA
-                || pta->getAnalysisTy() == AndersenSFR_WPA
-				|| pta->getAnalysisTy() == TypeCPP_WPA
-				|| pta->getAnalysisTy() == Steensgaard_WPA);
-    }
-    //@}
-
-    /// Get constraint graph
-    ConstraintGraph* getConstraintGraph()
-    {
-        return consCG;
-    }
-
-    /// dump statistics
-    inline void printStat()
-    {
-        PointerAnalysis::dumpStat();
-    }
+    /// Pass ID
+    static char ID;
 
     /// Statistics
     //@{
-    static Size_t numOfProcessedAddr;   /// Number of processed Addr edge
-    static Size_t numOfProcessedCopy;   /// Number of processed Copy edge
-    static Size_t numOfProcessedGep;    /// Number of processed Gep edge
-    static Size_t numOfProcessedLoad;   /// Number of processed Load edge
-    static Size_t numOfProcessedStore;  /// Number of processed Store edge
+    static Size_t numOfProcessedAddr;	/// Number of processed Addr edge
+    static Size_t numOfProcessedCopy;	/// Number of processed Copy edge
+    static Size_t numOfProcessedGep;	/// Number of processed Gep edge
+    static Size_t numOfProcessedLoad;	/// Number of processed Load edge
+    static Size_t numOfProcessedStore;	/// Number of processed Store edge
     static Size_t numOfSfrs;
     static Size_t numOfFieldExpand;
 
@@ -137,39 +79,40 @@ public:
     static double timeOfUpdateCallGraph;
     //@}
 
-protected:
-    /// Constraint Graph
-    ConstraintGraph* consCG;
-};
-
-/*!
- * Inclusion-based Pointer Analysis
- */
-class Andersen:  public AndersenBase
-{
-
-
-public:
-    typedef SCCDetection<ConstraintGraph*> CGSCC;
-    typedef OrderedMap<CallSite, NodeID> CallSite2DummyValPN;
-
     /// Constructor
     Andersen(PAG* _pag, PTATY type = Andersen_WPA, bool alias_check = true)
-        :  AndersenBase(_pag, type, alias_check), pwcOpt(false), diffOpt(true)
+        :  BVDataPTAImpl(_pag, type, alias_check), pwcOpt(false), diffOpt(true), consCG(NULL)
     {
+        iterationForPrintStat = OnTheFlyIterBudgetForStat;
     }
 
     /// Destructor
     virtual ~Andersen()
     {
-
+        if (consCG != NULL)
+            delete consCG;
+        consCG = NULL;
     }
+
+    /// Andersen analysis
+    void analyze();
 
     /// Initialize analysis
     virtual void initialize();
+    //}
 
     /// Finalize analysis
-    virtual void finalize();
+    virtual inline void finalize()
+    {
+        /// dump constraint graph if PAGDotGraph flag is enabled
+        consCG->dump("consCG_final");
+        consCG->print();
+        /// sanitize field insensitive obj
+        /// TODO: Fields has been collapsed during Andersen::collapseField().
+        //	sanitizePts();
+
+        PointerAnalysis::finalize();
+    }
 
     /// Reset data
     inline void resetData()
@@ -189,7 +132,7 @@ public:
     static inline bool classof(const PointerAnalysis *pta)
     {
         return (pta->getAnalysisTy() == Andersen_WPA
-				|| pta->getAnalysisTy() == AndersenLCD_WPA
+                || pta->getAnalysisTy() == AndersenLCD_WPA
                 || pta->getAnalysisTy() == AndersenHCD_WPA
                 || pta->getAnalysisTy() == AndersenHLCD_WPA
                 || pta->getAnalysisTy() == AndersenWaveDiff_WPA
@@ -212,7 +155,7 @@ public:
     //@}
 
     /// Operation of points-to set
-    virtual inline const PointsTo& getPts(NodeID id)
+    virtual inline PointsTo& getPts(NodeID id)
     {
         return getPTDataTy()->getPts(sccRepNode(id));
     }
@@ -228,6 +171,11 @@ public:
         return getPTDataTy()->unionPts(id,ptd);
     }
 
+    /// Get constraint graph
+    ConstraintGraph* getConstraintGraph()
+    {
+        return consCG;
+    }
 
     void dumpTopLevelPtsTo();
 
@@ -272,7 +220,7 @@ protected:
             getDiffPTDataTy()->computeDiffPts(rep, getDiffPTDataTy()->getPts(rep));
         }
     }
-    virtual inline const PointsTo& getDiffPts(NodeID id)
+    virtual inline PointsTo& getDiffPts(NodeID id)
     {
         NodeID rep = sccRepNode(id);
         if (enableDiff())
@@ -320,7 +268,7 @@ protected:
     virtual void handleCopyGep(ConstraintNode* node);
     virtual void handleLoadStore(ConstraintNode* node);
     virtual void processAddr(const AddrCGEdge* addr);
-    virtual bool processGepPts(const PointsTo& pts, const GepCGEdge* edge);
+    virtual bool processGepPts(PointsTo& pts, const GepCGEdge* edge);
     //@}
 
     /// Add copy edge on constraint graph
@@ -337,8 +285,20 @@ protected:
     /// Update call graph for the input indirect callsites
     virtual bool updateCallGraph(const CallSiteToFunPtrMap& callsites);
 
+    /// Update call graph for all the indirect callsites
+    virtual inline bool updateCallGraph()
+    {
+        return updateCallGraph(getIndirectCallsites());
+    }
+
     /// Connect formal and actual parameters for indirect callsites
     void connectCaller2CalleeParams(CallSite cs, const SVFFunction* F, NodePairSet& cpySrcNodes);
+
+    /// dump statistics
+    inline void printStat()
+    {
+        PointerAnalysis::dumpStat();
+    }
 
     /// Merge sub node to its rep
     virtual void mergeNodeToRep(NodeID nodeId,NodeID newRepId);
@@ -364,14 +324,15 @@ protected:
     /// SCC detection
     virtual NodeStack& SCCDetect();
 
-
+    /// Constraint Graph
+    ConstraintGraph* consCG;
 
     /// Sanitize pts for field insensitive objects
     void sanitizePts()
     {
         for(ConstraintGraph::iterator it = consCG->begin(), eit = consCG->end(); it!=eit; ++it)
         {
-            const PointsTo& pts = getPts(it->first);
+            PointsTo& pts = getPts(it->first);
             NodeBS fldInsenObjs;
             for(NodeBS::iterator pit = pts.begin(), epit = pts.end(); pit!=epit; ++pit)
             {
@@ -421,7 +382,7 @@ public:
     /// Create an singleton instance directly instead of invoking llvm pass manager
     static AndersenWaveDiff* createAndersenWaveDiff(PAG* _pag)
     {
-        if(diffWave==nullptr)
+        if(diffWave==NULL)
         {
             diffWave = new AndersenWaveDiff(_pag, AndersenWaveDiff_WPA, false);
             diffWave->analyze();
@@ -433,7 +394,7 @@ public:
     {
         if (diffWave)
             delete diffWave;
-        diffWave = nullptr;
+        diffWave = NULL;
     }
 
     virtual void solveWorklist();
@@ -464,7 +425,7 @@ class AndersenWaveDiffWithType : public AndersenWaveDiff
 
 private:
 
-    typedef Map<NodeID, Set<const GepCGEdge*>> TypeMismatchedObjToEdgeTy;
+    typedef DenseMap<NodeID, DenseSet<const GepCGEdge*>> TypeMismatchedObjToEdgeTy;
 
     TypeMismatchedObjToEdgeTy typeMismatchedObjToEdges;
 
@@ -473,12 +434,12 @@ private:
         TypeMismatchedObjToEdgeTy::iterator it = typeMismatchedObjToEdges.find(obj);
         if (it != typeMismatchedObjToEdges.end())
         {
-            Set<const GepCGEdge*> &edges = it->second;
+            DenseSet<const GepCGEdge*> &edges = it->second;
             edges.insert(gepEdge);
         }
         else
         {
-            Set<const GepCGEdge*> edges;
+            DenseSet<const GepCGEdge*> edges;
             edges.insert(gepEdge);
             typeMismatchedObjToEdges[obj] = edges;
         }
@@ -493,7 +454,7 @@ private:
         NodeID rep = sccRepNode(id);
         getDiffPTDataTy()->computeDiffPts(rep, getDiffPTDataTy()->getPts(rep));
     }
-    virtual inline const PointsTo& getDiffPts(NodeID id)
+    virtual inline PointsTo& getDiffPts(NodeID id)
     {
         NodeID rep = sccRepNode(id);
         return getDiffPTDataTy()->getDiffPts(rep);
@@ -503,13 +464,13 @@ private:
 public:
     AndersenWaveDiffWithType(PAG* _pag, PTATY type = AndersenWaveDiffWithType_WPA): AndersenWaveDiff(_pag,type)
     {
-        assert(getTypeSystem()!=nullptr && "a type system is required for this pointer analysis");
+        assert(getTypeSystem()!=NULL && "a type system is required for this pointer analysis");
     }
 
     /// Create an singleton instance directly instead of invoking llvm pass manager
     static AndersenWaveDiffWithType* createAndersenWaveDiffWithType(PAG* p)
     {
-        if(diffWaveWithType==nullptr)
+        if(diffWaveWithType==NULL)
         {
             diffWaveWithType = new AndersenWaveDiffWithType(p);
             diffWaveWithType->analyze();
@@ -521,7 +482,7 @@ public:
     {
         if (diffWaveWithType)
             delete diffWaveWithType;
-        diffWaveWithType = nullptr;
+        diffWaveWithType = NULL;
     }
 
 protected:
@@ -532,7 +493,7 @@ protected:
     /// process "bitcast" CopyCGEdge
     virtual void processCast(const ConstraintEdge *edge);
     /// update type of objects when process "bitcast" CopyCGEdge
-    void updateObjType(const Type *type, const PointsTo &objs);
+    void updateObjType(const Type *type, PointsTo &objs);
     /// process mismatched gep edges
     void processTypeMismatchedGep(NodeID obj, const Type *type);
     /// match types for Gep Edges
@@ -600,7 +561,7 @@ protected:
     //@{
     bool isMetEdge (ConstraintEdge* edge) const
     {
-        EdgeSet::const_iterator it = metEdges.find(edge->getEdgeID());
+        EdgeSet::iterator it = metEdges.find(edge->getEdgeID());
         return it != metEdges.end();
     };
     void addMetEdge(ConstraintEdge* edge)
@@ -638,7 +599,7 @@ private:
 
 public:
     AndersenHCD(PAG* _pag, PTATY type = AndersenHCD_WPA) :
-        Andersen(_pag, type), oCG(nullptr)
+        Andersen(_pag, type), oCG(NULL)
     {
     }
 

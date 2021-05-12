@@ -52,7 +52,7 @@ private:
 
 public:
     /// Constructor
-    PAGBuilder(): pag(PAG::getPAG()), svfMod(nullptr), curBB(nullptr),curVal(nullptr)
+    PAGBuilder(): pag(PAG::getPAG()), svfMod(NULL), curBB(NULL),curVal(NULL)
     {
     }
     /// Destructor
@@ -71,9 +71,9 @@ public:
 
     /// Initialize nodes and edges
     //@{
-    void initialiseNodes();
+    void initalNode();
     void addEdge(NodeID src, NodeID dst, PAGEdge::PEDGEK kind,
-                 Size_t offset = 0, Instruction* cs = nullptr);
+                 Size_t offset = 0, Instruction* cs = NULL);
     // @}
 
     /// Sanity check for PAG
@@ -161,8 +161,6 @@ public:
     void visitCastInst(CastInst &I);
     void visitSelectInst(SelectInst &I);
     void visitExtractValueInst(ExtractValueInst  &EVI);
-    void visitBranchInst(BranchInst &I);
-    void visitSwitchInst(SwitchInst &I);
     void visitInsertValueInst(InsertValueInst &I)
     {
         addBlackHoleAddrEdge(getValueNode(&I));
@@ -242,7 +240,7 @@ public:
     {
         const Value* cval = getCurrentValue();
         const BasicBlock* cbb = getCurrentBB();
-        setCurrentLocation(int2Ptrce,nullptr);
+        setCurrentLocation(int2Ptrce,NULL);
         addBlackHoleAddrEdge(node);
         setCurrentLocation(cval,cbb);
     }
@@ -254,7 +252,7 @@ public:
         /// let all undef value or non-determined pointers points-to black hole
         LLVMContext &cxt = LLVMModuleSet::getLLVMModuleSet()->getContext();
         ConstantPointerNull *constNull = ConstantPointerNull::get(Type::getInt8PtrTy(cxt));
-        setCurrentLocation(constNull, nullptr);
+        setCurrentLocation(constNull, NULL);
         addBlackHoleAddrEdge(pag->getBlkPtr());
         return nullPtr;
     }
@@ -319,7 +317,7 @@ public:
         if(const Instruction* inst = SVFUtil::dyn_cast<Instruction>(curVal))
             node = pag->getICFG()->getIntraBlockNode(inst);
         else
-            node = nullptr;
+            node = NULL;
         StorePE *edge = pag->addStorePE(src, dst, node);
         setCurrentBBAndValueForPAGEdge(edge);
         return edge;

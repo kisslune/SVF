@@ -1,32 +1,40 @@
-echo "Setting up environment for SVF"
+echo "Setting up environment for PTA"
 
 
 #########
-# export LLVM_DIR and Z3_DIR
-# Please change LLVM_DIR and Z3_DIR if they are different 
+# Please change LLVM_OBJ_ROOT before using it
 ########
 
-export SVFHOME=`pwd`
-if [ -z "$LLVM_DIR" ]
-then
-   export LLVM_DIR=$SVFHOME/llvm-12.0.0.obj
+export LLVM_OBJ_ROOT=$LLVM_OBJ
+
+export PATH=$LLVM_OBJ_ROOT/bin:$PATH
+export LLVM_DIR=$LLVM_OBJ_ROOT
+#export LLVM_OBJ_ROOT=$LLVM_HOME/llvm-$llvm_version.dbg
+#export PATH=$LLVM_OBJ_ROOT/Debug+Asserts/bin:$PATH
+export LLVMOPT=opt
+export CLANG=$LLVM_OBJ_ROOT/bin/clang
+export CLANGCPP=$LLVM_OBJ_ROOT/bin/clang++
+export LLVMDIS=llvm-dis
+export LLVMLLC=llc
+
+##############astyle code formatting###############
+AstyleDir=/home/ysui/astyle/build/clang
+export PATH=$AstyleDir/bin:$PATH
+
+##############check what os we have
+PLATFORM='unknown'
+unamestr=`uname`
+if [[ "$unamestr" == 'Linux' ]]; then
+export PLATFORM='linux'
+elif [[ "$unamestr" == 'Darwin' ]]; then
+export PLATFORM='darwin'
+elif [[ "$unamestr" == 'FreeBSD' ]]; then
+export PLATFORM='freebsd'
 fi
 
-echo "LLVM_DIR =" $LLVM_DIR
 
-if [ -z "$Z3_DIR" ]
-then
-  export Z3_DIR=$SVFHOME/z3.obj
-fi
-
-echo "Z3_DIR =" $Z3_DIR
-
-export PATH=$LLVM_DIR/bin:$PATH
-
-
-#########
-#export PATH FOR SVF and LLVM executables
-#########                                                                 
+#########PATH FOR PTA##############                                                                 
+export PTAHOME=`pwd`
 if [[ $1 == 'debug' ]]
 then
 PTAOBJTY='Debug'
@@ -34,9 +42,17 @@ else
 PTAOBJTY='Release'
 fi
 Build=$PTAOBJTY'-build'
-
-export PATH=$LLVM_DIR/bin:$PATH
-export PTABIN=$SVFHOME/$Build/bin
+export PTABIN=$PTAHOME/$Build/bin
+export PTALIB=$PTAHOME/$Build/lib
+export PTARTLIB=$PTAHOME/lib/RuntimeLib
 export PATH=$PTABIN:$PATH
 
 
+### for mac 10.10.1###
+rm -rf $PTALIB/liblib*
+for file in $(find $PTALIB -name "*.dylib")
+do
+    basefilename=`basename $file`
+    newfile=`echo $basefilename | sed s/lib/liblib/`
+    ln -s $PTALIB/$basefilename $PTALIB/$newfile
+done

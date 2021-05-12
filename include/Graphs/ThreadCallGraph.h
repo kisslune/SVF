@@ -159,17 +159,17 @@ class ThreadCallGraph: public PTACallGraph
 {
 
 public:
-    typedef Set<const CallBlockNode*> InstSet;
+    typedef std::set<const CallBlockNode*> InstSet;
     typedef InstSet CallSiteSet;
     typedef std::vector<const Instruction*> InstVector;
-    typedef Map<const Instruction*, InstSet> CallToInstMap;
-    typedef Set<CallSiteSet*> CtxSet;
+    typedef std::map<const Instruction*, InstSet> CallToInstMap;
+    typedef std::set<CallSiteSet*> CtxSet;
     typedef ThreadForkEdge::ForkEdgeSet ForkEdgeSet;
-    typedef Map<const CallBlockNode*, ForkEdgeSet> CallInstToForkEdgesMap;
+    typedef std::map<const CallBlockNode*, ForkEdgeSet> CallInstToForkEdgesMap;
     typedef ThreadJoinEdge::JoinEdgeSet JoinEdgeSet;
-    typedef Map<const CallBlockNode*, JoinEdgeSet> CallInstToJoinEdgesMap;
+    typedef std::map<const CallBlockNode*, JoinEdgeSet> CallInstToJoinEdgesMap;
     typedef HareParForEdge::ParForEdgeSet ParForEdgeSet;
-    typedef Map<const CallBlockNode*, ParForEdgeSet> CallInstToParForEdgesMap;
+    typedef std::map<const CallBlockNode*, ParForEdgeSet> CallInstToParForEdgesMap;
 
     /// Constructor
     ThreadCallGraph();
@@ -268,11 +268,11 @@ public:
 
     /// Fork sites iterators
     //@{
-    inline CallSiteSet::const_iterator forksitesBegin() const
+    inline CallSiteSet::iterator forksitesBegin() const
     {
         return forksites.begin();
     }
-    inline CallSiteSet::const_iterator forksitesEnd() const
+    inline CallSiteSet::iterator forksitesEnd() const
     {
         return forksites.end();
     }
@@ -280,11 +280,11 @@ public:
 
     /// Join sites iterators
     //@{
-    inline CallSiteSet::const_iterator joinsitesBegin() const
+    inline CallSiteSet::iterator joinsitesBegin() const
     {
         return joinsites.begin();
     }
-    inline CallSiteSet::const_iterator joinsitesEnd() const
+    inline CallSiteSet::iterator joinsitesEnd() const
     {
         return joinsites.end();
     }
@@ -292,11 +292,11 @@ public:
 
     /// hare_parallel_for sites iterators
     //@{
-    inline CallSiteSet::const_iterator parForSitesBegin() const
+    inline CallSiteSet::iterator parForSitesBegin() const
     {
         return parForSites.begin();
     }
-    inline CallSiteSet::const_iterator parForSitesEnd() const
+    inline CallSiteSet::iterator parForSitesEnd() const
     {
         return parForSites.end();
     }
@@ -364,7 +364,7 @@ public:
     /// map call instruction to its CallGraphEdge map
     inline void addThreadForkEdgeSetMap(const CallBlockNode* cs, ThreadForkEdge* edge)
     {
-        if(edge!=nullptr)
+        if(edge!=NULL)
         {
             callinstToThreadForkEdgesMap[cs].insert(edge);
             callinstToCallGraphEdgesMap[cs].insert(edge);
@@ -374,7 +374,7 @@ public:
     /// map call instruction to its CallGraphEdge map
     inline void addThreadJoinEdgeSetMap(const CallBlockNode* cs, ThreadJoinEdge* edge)
     {
-        if(edge!=nullptr)
+        if(edge!=NULL)
         {
             callinstToThreadJoinEdgesMap[cs].insert(edge);
             callinstToCallGraphEdgesMap[cs].insert(edge);
@@ -384,7 +384,7 @@ public:
     /// map call instruction to its CallGraphEdge map
     inline void addHareParForEdgeSetMap(const CallBlockNode* cs, HareParForEdge* edge)
     {
-        if(edge!=nullptr)
+        if(edge!=NULL)
         {
             callinstToHareParForEdgesMap[cs].insert(edge);
             callinstToCallGraphEdgesMap[cs].insert(edge);
@@ -402,7 +402,7 @@ public:
             if(jit!=it->second.end())
                 return *jit;
         }
-        return nullptr;
+        return NULL;
     }
 
 private:

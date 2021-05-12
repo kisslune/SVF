@@ -5,7 +5,6 @@
  */
 
 
-#include "Util/Options.h"
 #include "MemoryModel/PointerAnalysisImpl.h"
 #include "DDA/DDAPass.h"
 #include "DDA/FlowDDA.h"
@@ -21,12 +20,47 @@ using namespace SVFUtil;
 
 char DDAPass::ID = 0;
 
+static llvm::cl::opt<unsigned> maxPathLen("maxpath",  llvm::cl::init(100000),
+        llvm::cl::desc("Maximum path limit for DDA"));
+
+static llvm::cl::opt<unsigned> maxContextLen("maxcxt",  llvm::cl::init(3),
+        llvm::cl::desc("Maximum context limit for DDA"));
+
+static llvm::cl::opt<string> userInputQuery("query",  llvm::cl::init("all"),
+        llvm::cl::desc("Please specify queries by inputing their pointer ids"));
+
+static llvm::cl::opt<bool> insenRecur("inrecur", llvm::cl::init(false),
+                                      llvm::cl::desc("Mark context insensitive SVFG edges due to function recursions"));
+
+static llvm::cl::opt<bool> insenCycle("incycle", llvm::cl::init(false),
+                                      llvm::cl::desc("Mark context insensitive SVFG edges due to value-flow cycles"));
+
+static llvm::cl::opt<bool> printCPts("cpts", llvm::cl::init(false),
+                                     llvm::cl::desc("Dump conditional points-to set "));
+
+static llvm::cl::opt<bool> printQueryPts("print-query-pts", llvm::cl::init(false),
+        llvm::cl::desc("Dump queries' conditional points-to set "));
+
+static llvm::cl::opt<bool> WPANUM("wpanum", llvm::cl::init(false),
+                                  llvm::cl::desc("collect WPA FS number only "));
+
 static llvm::RegisterPass<DDAPass> DDAPA("dda", "Demand-driven Pointer Analysis Pass");
+
+/// register this into alias analysis group
+//static RegisterAnalysisGroup<AliasAnalysis> AA_GROUP(DDAPA);
+
+static llvm::cl::bits<PointerAnalysis::PTATY> DDASelected(llvm::cl::desc("Select pointer analysis"),
+        llvm::cl::values(
+            clEnumValN(PointerAnalysis::FlowS_DDA, "dfs", "Demand-driven flow sensitive analysis"),
+            clEnumValN(PointerAnalysis::Cxt_DDA, "cxt", "Demand-driven context- flow- sensitive analysis")
+        ));
+
+
 
 DDAPass::~DDAPass()
 {
     // _pta->dumpStat();
-    if (_client != nullptr)
+    if (_client != NULL)
         delete _client;
 }
 
@@ -41,7 +75,7 @@ void DDAPass::runOnModule(SVFModule* module)
     for (u32_t i = PointerAnalysis::FlowS_DDA;
             i < PointerAnalysis::Default_PTA; i++)
     {
-        if (Options::DDASelected.isSet(i))
+        if (DDASelected.isSet(i))
             runPointerAnalysis(module, i);
     }
 }
@@ -57,14 +91,14 @@ bool DDAPass::runOnModule(Module& module)
 void DDAPass::selectClient(SVFModule* module)
 {
 
-    if (!Options::UserInputQuery.empty())
+    if (!userInputQuery.empty())
     {
         /// solve function pointer
-        if (Options::UserInputQuery == "funptr")
+        if (userInputQuery == "funptr")
         {
             _client = new FunptrDDAClient(module);
         }
-        else if (Options::UserInputQuery == "alias")
+        else if (userInputQuery == "alias")
         {
             _client = new AliasDDAClient(module);
         }
@@ -72,10 +106,10 @@ void DDAPass::selectClient(SVFModule* module)
         else
         {
             _client = new DDAClient(module);
-            if (Options::UserInputQuery != "all")
+            if (userInputQuery != "all")
             {
                 u32_t buf; // Have a buffer
-                stringstream ss(Options::UserInputQuery); // Insert the user input string into a stream
+                stringstream ss(userInputQuery); // Insert the user input string into a stream
                 while (ss >> buf)
                     _client->setQuery(buf);
             }
@@ -96,8 +130,8 @@ void DDAPass::runPointerAnalysis(SVFModule* module, u32_t kind)
 	PAGBuilder builder;
 	PAG* pag = builder.build(module);
 
-    VFPathCond::setMaxPathLen(Options::MaxPathLen);
-    ContextCond::setMaxCxtLen(Options::MaxContextLen);
+    VFPathCond::setMaxPathLen(maxPathLen);
+    ContextCond::setMaxCxtLen(maxContextLen);
 
     /// Initialize pointer analysis.
     switch (kind)
@@ -117,7 +151,7 @@ void DDAPass::runPointerAnalysis(SVFModule* module, u32_t kind)
         break;
     }
 
-    if(Options::WPANum)
+    if(WPANUM)
     {
         _client->collectWPANum(module);
     }
@@ -129,13 +163,13 @@ void DDAPass::runPointerAnalysis(SVFModule* module, u32_t kind)
         _client->answerQueries(_pta);
         ///finalize
         _pta->finalize();
-        if(Options::PrintCPts)
+        if(printCPts)
             _pta->dumpCPts();
 
         if (_pta->printStat())
             _client->performStat(_pta);
 
-        if (Options::PrintQueryPts)
+        if (printQueryPts)
             printQueryPTS();
     }
 }
@@ -146,9 +180,9 @@ void DDAPass::runPointerAnalysis(SVFModule* module, u32_t kind)
  */
 void DDAPass::initCxtInsensitiveEdges(PointerAnalysis* pta, const SVFG* svfg,const SVFGSCC* svfgSCC, SVFGEdgeSet& insensitveEdges)
 {
-    if(Options::InsenRecur)
+    if(insenRecur)
         collectCxtInsenEdgeForRecur(pta,svfg,insensitveEdges);
-    else if(Options::InsenCycle)
+    else if(insenCycle)
         collectCxtInsenEdgeForVFCycle(pta,svfg,svfgSCC,insensitveEdges);
 }
 
@@ -207,7 +241,7 @@ void DDAPass::collectCxtInsenEdgeForRecur(PointerAnalysis* pta, const SVFG* svfg
 void DDAPass::collectCxtInsenEdgeForVFCycle(PointerAnalysis* pta, const SVFG* svfg,const SVFGSCC* svfgSCC, SVFGEdgeSet& insensitveEdges)
 {
 
-    OrderedSet<NodePair> insensitvefunPairs;
+    std::set<NodePair> insensitvefunPairs;
 
     for (SVFG::SVFGNodeIDToNodeMapTy::const_iterator it = svfg->begin(),eit = svfg->end(); it != eit; ++it)
     {
@@ -312,8 +346,8 @@ AliasResult DDAPass::alias(const Value* V1, const Value* V2)
  */
 void DDAPass::printQueryPTS()
 {
-    const OrderedNodeSet& candidates = _client->getCandidateQueries();
-    for (OrderedNodeSet::const_iterator it = candidates.begin(), eit = candidates.end(); it != eit; ++it)
+    const NodeSet& candidates = _client->getCandidateQueries();
+    for (NodeSet::iterator it = candidates.begin(), eit = candidates.end(); it != eit; ++it)
     {
         const PointsTo& pts = _pta->getPts(*it);
         _pta->dumpPts(*it,pts);

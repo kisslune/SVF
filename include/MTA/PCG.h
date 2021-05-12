@@ -29,9 +29,9 @@ class PCG
 {
 
 public:
-    typedef Set<const Function*> FunSet;
+    typedef std::set<const Function*> FunSet;
     typedef std::vector<const Function*> FunVec;
-    typedef Set<const Instruction*> CallInstSet;
+    typedef std::set<const Instruction*> CallInstSet;
     typedef FIFOWorkList<const Function*> FunWorkList;
     typedef FIFOWorkList<const BasicBlock*> BBWorkList;
 

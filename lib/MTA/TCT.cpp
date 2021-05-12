@@ -5,7 +5,6 @@
  *      Author: Yulei Sui, Peng Di
  */
 
-#include "Util/Options.h"
 #include "MTA/TCT.h"
 #include "MTA/MTA.h"
 #include "Util/DataFlowUtil.h"
@@ -14,6 +13,8 @@
 
 using namespace SVF;
 using namespace SVFUtil;
+
+static llvm::cl::opt<bool> TCTDotGraph("dump-tct", llvm::cl::init(false), llvm::cl::desc("Dump dot graph of Call Graph"));
 
 /*!
  * An instruction i is in loop
@@ -70,7 +71,7 @@ bool TCT::isInRecursion(const Instruction* inst) const
 {
     const Function* f = inst->getParent()->getParent();
     FIFOWorkList<const Function*> worklist;
-    Set<const Function*> visits;
+    std::set<const Function*> visits;
     worklist.push(f);
 
     while(!worklist.empty())
@@ -387,7 +388,7 @@ void TCT::build()
 
     collectLoopInfoForJoin();
 
-    // the fork site of main function is initialized with nullptr.
+    // the fork site of main function is initialized with NULL.
     // the context of main is initialized with empty
     // start routine is empty
 
@@ -397,7 +398,7 @@ void TCT::build()
         if (!isCandidateFun(*it))
             continue;
         CallStrCxt cxt;
-        TCTNode* mainTCTNode = getOrCreateTCTNode(cxt, nullptr, cxt, *it);
+        TCTNode* mainTCTNode = getOrCreateTCTNode(cxt, NULL, cxt, *it);
         CxtThreadProc t(mainTCTNode->getId(), cxt, *it);
         pushToCTPWorkList(t);
     }
@@ -430,7 +431,7 @@ void TCT::build()
 
     collectMultiForkedThreads();
 
-    if (Options::TCTDotGraph)
+    if (TCTDotGraph)
     {
         print();
         dump("tct");
@@ -539,7 +540,7 @@ void TCT::dumpCxt(CallStrCxt& cxt)
  */
 void TCT::dump(const std::string& filename)
 {
-    if (Options::TCTDotGraph)
+    if (TCTDotGraph)
         GraphPrinter::WriteGraphToFile(outs(), filename, this);
 }
 
@@ -569,7 +570,7 @@ TCTEdge* TCT::hasGraphEdge(TCTNode* src, TCTNode* dst, TCTEdge::CEDGEK kind) con
         return outEdge;
     }
     else
-        return nullptr;
+        return NULL;
 }
 
 /*!
@@ -583,7 +584,7 @@ TCTEdge* TCT::getGraphEdge(TCTNode* src, TCTNode* dst, TCTEdge::CEDGEK kind)
         if (edge->getEdgeKind() == kind && edge->getDstID() == dst->getId())
             return edge;
     }
-    return nullptr;
+    return NULL;
 }
 namespace llvm
 {

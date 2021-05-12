@@ -55,8 +55,8 @@ namespace SVF
  */
 class SVFGOPT : public SVFG
 {
-    typedef Set<SVFGNode*> SVFGNodeSet;
-    typedef Map<NodeID, NodeID> NodeIDToNodeIDMap;
+    typedef DenseSet<SVFGNode*> SVFGNodeSet;
+    typedef DenseMap<NodeID, NodeID> NodeIDToNodeIDMap;
     typedef FIFOWorkList<const MSSAPHISVFGNode*> WorkList;
 
 public:
@@ -90,7 +90,7 @@ protected:
     {
         NodeID phiId = getDef(fun_arg);
         SVFGEdge* edge = addCallEdge(getDef(cs_arg), phiId, csId);
-        if (edge != nullptr)
+        if (edge != NULL)
         {
             PHISVFGNode* phi = SVFUtil::cast<PHISVFGNode>(getSVFGNode(phiId));
             addInterPHIOperands(phi, cs_arg);
@@ -102,7 +102,7 @@ protected:
     {
         NodeID phiId = getDef(cs_ret);
         SVFGEdge* edge = addRetEdge(getDef(fun_ret), phiId, csId);
-        if (edge != nullptr)
+        if (edge != NULL)
         {
             PHISVFGNode* phi = SVFUtil::cast<PHISVFGNode>(getSVFGNode(phiId));
             addInterPHIOperands(phi, fun_ret);
@@ -118,7 +118,7 @@ protected:
         {
             NodeID aiDef = getActualINDef(actualIn->getId());
             SVFGEdge* edge = addCallIndirectSVFGEdge(aiDef,formalIn->getId(),csId,intersection);
-            if (edge != nullptr)
+            if (edge != NULL)
                 edges.insert(edge);
         }
     }
@@ -131,7 +131,7 @@ protected:
         {
             NodeID foDef = getFormalOUTDef(formalOut->getId());
             SVFGEdge* edge = addRetIndirectSVFGEdge(foDef,actualOut->getId(),csId,intersection);
-            if (edge != nullptr)
+            if (edge != NULL)
                 edges.insert(edge);
         }
     }

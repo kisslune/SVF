@@ -5,7 +5,6 @@
  *      Author: Peng Di
  */
 
-#include "Util/Options.h"
 #include <string>
 #include <sstream>
 
@@ -14,6 +13,7 @@
 using namespace SVF;
 using namespace SVFUtil;
 
+static llvm::cl::opt<bool> PrintValidRes("print-MHP-validation", llvm::cl::init(false), llvm::cl::desc("Print MHP Validation Results"));
 
 void MTAResultValidator::analyze()
 {
@@ -111,7 +111,7 @@ const Instruction* MTAResultValidator::getPreviousMemoryAccessInst(const Instruc
             return I;
         I = I->getPrevNode();
     }
-    return nullptr;
+    return NULL;
 }
 
 inline std::string MTAResultValidator::getOutput(const char *scenario, bool analysisRes)
@@ -307,20 +307,20 @@ bool MTAResultValidator::validateCxtThread()
     if (tct->getTCTNodeNum() != vthdToCxt.size())
     {
         res = false;
-        if (Options::PrintValidRes)
+        if (PrintValidRes)
         {
             outs() << "\nValidate CxtThread: The number of CxtThread is different from given result!!!\n";
             outs() << "Given threads:\t" << vthdToCxt.size() << "\nAnalysis result:\t" << tct->getTCTNodeNum() << "\n";
         }
     }
 
-    Set<int> visitedvthd;
+    std::set<int> visitedvthd;
 
     for (NodeID i = 0; i < tct->getTCTNodeNum(); i++)
     {
         const CxtThread rthd = tct->getTCTNode(i)->getCxtThread();
         bool matched = false;
-        for (Map<NodeID, CallStrCxt>::iterator j = vthdToCxt.begin(), ej = vthdToCxt.end(); j != ej; j++)
+        for (std::map<NodeID, CallStrCxt>::iterator j = vthdToCxt.begin(), ej = vthdToCxt.end(); j != ej; j++)
         {
             NodeID vthdid = (*j).first;
             if (matchCxt(rthd.getContext(), vthdToCxt[vthdid]))
@@ -328,7 +328,7 @@ bool MTAResultValidator::validateCxtThread()
                 if (visitedvthd.find(vthdid) != visitedvthd.end())
                 {
                     res = false;
-                    if (Options::PrintValidRes)
+                    if (PrintValidRes)
                     {
                         outs() << "\nValidate CxtThread: Repeat real CxtThread !!!\n";
                         rthd.dump();
@@ -345,7 +345,7 @@ bool MTAResultValidator::validateCxtThread()
         if (!matched)
         {
             res = false;
-            if (Options::PrintValidRes)
+            if (PrintValidRes)
             {
                 outs() << "\nValidate CxtThread: Cannot match real CxtThread !!!\n";
                 rthd.dump();
@@ -355,10 +355,10 @@ bool MTAResultValidator::validateCxtThread()
     if (visitedvthd.size() != vthdToCxt.size())
     {
         res = false;
-        if (Options::PrintValidRes)
+        if (PrintValidRes)
         {
             outs() << "\nValidate CxtThread: Some given CxtThreads cannot be found !!!\n";
-            for (Map<NodeID, CallStrCxt>::iterator j = vthdToCxt.begin(), ej = vthdToCxt.end(); j != ej; j++)
+            for (std::map<NodeID, CallStrCxt>::iterator j = vthdToCxt.begin(), ej = vthdToCxt.end(); j != ej; j++)
             {
                 NodeID vthdid = (*j).first;
                 if (visitedvthd.find(vthdid) == visitedvthd.end())
@@ -391,7 +391,7 @@ bool MTAResultValidator::validateTCT()
             }
         }
 
-        for (Set<NodeID>::iterator j = rthdToChildren[i].begin(), ej = rthdToChildren[i].end(); j != ej; j++)
+        for (std::set<NodeID>::iterator j = rthdToChildren[i].begin(), ej = rthdToChildren[i].end(); j != ej; j++)
         {
             NodeID gid = *j;
             if (!tct->hasGraphEdge(pnode, tct->getTCTNode(gid), TCTEdge::ThreadCreateEdge))
@@ -400,11 +400,11 @@ bool MTAResultValidator::validateTCT()
                 res_node = false;
             }
         }
-        if ((!res_node) && Options::PrintValidRes)
+        if ((!res_node) && PrintValidRes)
         {
             outs() << "Validate TCT: Wrong at TID " << rthdTovthd[i] << "\n";
             outs() << "Given children: \t";
-            for (Set<NodeID>::iterator j = rthdToChildren[i].begin(), ej = rthdToChildren[i].end(); j != ej; j++)
+            for (std::set<NodeID>::iterator j = rthdToChildren[i].begin(), ej = rthdToChildren[i].end(); j != ej; j++)
             {
                 NodeID gid = *j;
                 outs() << rthdTovthd[gid] << ", ";
@@ -434,7 +434,7 @@ MTAResultValidator::INTERLEV_FLAG MTAResultValidator::validateInterleaving()
 
         if ((*seti).second.size() != tsSet.size())
         {
-            if (Options::PrintValidRes)
+            if (PrintValidRes)
             {
                 outs() << "\nValidate Interleaving: Wrong at (" << SVFUtil::getSourceLoc(inst) << ")\n";
                 outs() << "Reason: The number of thread running on stmt is wrong\n";
@@ -471,7 +471,7 @@ MTAResultValidator::INTERLEV_FLAG MTAResultValidator::validateInterleaving()
                     NodeBS lev2 = threadStmtToInterLeaving[ts2];
                     if (lev != lev2)
                     {
-                        if (Options::PrintValidRes)
+                        if (PrintValidRes)
                         {
                             outs() << "\nValidate Interleaving: Wrong at (" << SVFUtil::getSourceLoc(inst) << ")\n";
                             outs() << "Reason: thread interleaving on stmt is wrong\n";
@@ -507,7 +507,7 @@ MTAResultValidator::INTERLEV_FLAG MTAResultValidator::validateInterleaving()
 
             if (!matched)
             {
-                if (Options::PrintValidRes)
+                if (PrintValidRes)
                 {
                     outs() << "\nValidate Interleaving: Wrong at (" << SVFUtil::getSourceLoc(inst) << ")\n";
                     outs() << "Reason: analysis thread cxt is not matched by given thread cxt\n";

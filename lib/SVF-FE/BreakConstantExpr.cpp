@@ -81,9 +81,9 @@ static llvm::RegisterPass<MergeFunctionRets> MP ("merge-rets",
 //  V - The value to check.
 //
 // Return value:
-//  nullptr  - This value is not a constant expression with a constant expression
+//  NULL  - This value is not a constant expression with a constant expression
 //          GEP within it.
-//  ~nullptr - A pointer to the value casted into a ConstantExpr is returned.
+//  ~NULL - A pointer to the value casted into a ConstantExpr is returned.
 //
 static ConstantExpr *
 hasConstantGEP (Value * V)

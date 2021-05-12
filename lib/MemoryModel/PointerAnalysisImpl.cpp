@@ -6,11 +6,9 @@
  */
 
 
-#include "Util/Options.h"
 #include "MemoryModel/PointerAnalysisImpl.h"
 #include "SVF-FE/CPPUtil.h"
 #include "SVF-FE/DCHG.h"
-#include "Util/Options.h"
 #include <fstream>
 #include <sstream>
 
@@ -19,6 +17,9 @@ using namespace SVFUtil;
 using namespace cppUtil;
 using namespace std;
 
+static llvm::cl::opt<bool> INCDFPTData("incdata", llvm::cl::init(true),
+                                       llvm::cl::desc("Enable incremental DFPTData for flow-sensitive analysis"));
+
 
 /*!
  * Constructor
@@ -26,27 +27,18 @@ using namespace std;
 BVDataPTAImpl::BVDataPTAImpl(PAG* p, PointerAnalysis::PTATY type, bool alias_check) :
     PointerAnalysis(p, type, alias_check)
 {
-    if (type == Andersen_BASE || type == Andersen_WPA || type == AndersenWaveDiff_WPA || type == AndersenHCD_WPA || type == AndersenHLCD_WPA
+    if (type == Andersen_WPA || type == AndersenWaveDiff_WPA || type == AndersenHCD_WPA || type == AndersenHLCD_WPA
             || type == AndersenLCD_WPA || type == TypeCPP_WPA || type == FlowS_DDA || type == AndersenWaveDiffWithType_WPA
             || type == AndersenSCD_WPA || type == AndersenSFR_WPA)
     {
-        // Only maintain reverse points-to when the analysis is field-sensitive.
-        ptD = new MutDiffPTDataTy(Options::MaxFieldLimit != 0);
-    }
-    else if (type == Steensgaard_WPA)
-    {
-        ptD = new MutDiffPTDataTy(false);
+        ptD = new DiffPTDataTy();
     }
     else if (type == FSSPARSE_WPA || type == FSTBHC_WPA)
     {
-        if (Options::INCDFPTData)
-            ptD = new IncMutDFPTDataTy(false);
+        if (INCDFPTData)
+            ptD = new IncDFPTDataTy();
         else
-            ptD = new MutDFPTDataTy(false);
-    }
-    else if (type == VFS_WPA)
-    {
-        ptD = new MutVersionedPTDataTy(false);
+            ptD = new DFPTDataTy();
     }
     else
         assert(false && "no points-to data available");
@@ -88,27 +80,27 @@ void BVDataPTAImpl::writeToFile(const string& filename)
     }
 
     // Write analysis results to file
+    PTDataTy *ptD = getPTDataTy();
+    auto &ptsMap = ptD->getPtsMap();
+    for (auto it = ptsMap.begin(), ie = ptsMap.end(); it != ie; ++it)
+    {
+        NodeID var = it->first;
+        const PointsTo &pts = getPts(var);
 
-    for (auto it = pag->begin(), ie = pag->end(); it != ie; ++it)
+        F.os() << var << " -> { ";
+        if (pts.empty())
         {
-            NodeID var = it->first;
-            const PointsTo &pts = getPts(var);
-
-            F.os() << var << " -> { ";
-            if (pts.empty())
+            F.os() << " ";
+        }
+        else
+        {
+            for (auto it = pts.begin(), ie = pts.end(); it != ie; ++it)
             {
-                F.os() << " ";
+                F.os() << *it << " ";
             }
-            else
-            {
-                for (auto it = pts.begin(), ie = pts.end(); it != ie; ++it)
-                {
-                    F.os() << *it << " ";
-                }
-            }
-            F.os() << "}\n";
+        }
+        F.os() << "}\n";
     }
-
 
     // Write GepPAGNodes to file
     for (auto it = pag->begin(), ie = pag->end(); it != ie; ++it)
@@ -165,6 +157,7 @@ bool BVDataPTAImpl::readFromFile(const string& filename)
 
         // var
         NodeID var = atoi(line.substr(0, pos).c_str());
+        PointsTo &pts = ptD->getPts(var);
 
         // objs
         pos = pos + delimiter1.length();
@@ -177,7 +170,7 @@ bool BVDataPTAImpl::readFromFile(const string& filename)
             while (ss.good())
             {
                 ss >> obj;
-                ptD->addPts(var, obj);
+                pts.set(obj);
             }
         }
     }
@@ -212,13 +205,13 @@ bool BVDataPTAImpl::readFromFile(const string& filename)
  */
 void BVDataPTAImpl::dumpTopLevelPtsTo()
 {
-    for (OrderedNodeSet::iterator nIter = this->getAllValidPtrs().begin();
+    for (NodeSet::iterator nIter = this->getAllValidPtrs().begin();
             nIter != this->getAllValidPtrs().end(); ++nIter)
     {
         const PAGNode* node = getPAG()->getPAGNode(*nIter);
         if (getPAG()->isValidTopLevelPtr(node))
         {
-            const PointsTo& pts = this->getPts(node->getId());
+            PointsTo& pts = this->getPts(node->getId());
             outs() << "\nNodeID " << node->getId() << " ";
 
             if (pts.empty())
@@ -245,7 +238,7 @@ void BVDataPTAImpl::dumpTopLevelPtsTo()
  */
 void BVDataPTAImpl::dumpAllPts()
 {
-    OrderedNodeSet pagNodes;
+    DenseNodeSet pagNodes;
     for(PAG::iterator it = pag->begin(), eit = pag->end(); it!=eit; it++)
     {
         pagNodes.insert(it->first);

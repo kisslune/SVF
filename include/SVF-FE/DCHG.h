@@ -74,16 +74,16 @@ public:
     typedef std::vector<const Function*> FuncVector;
 
     DCHNode(const DIType *diType, NodeID i = 0, GNodeK k = 0)
-        : GenericNode<DCHNode, DCHEdge>(i, k), vtable(nullptr), flags(0)
+        : GenericNode<DCHNode, DCHEdge>(i, k), vtable(NULL), flags(0)
     {
         this->diType = diType;
-        if (diType == nullptr)
+        if (diType == NULL)
         {
             typeName = "null-void";
         }
-        else if (diType->getRawName() != nullptr)
+        else if (diType->getRawName() != NULL)
         {
-            typeName = diType->getName().str();
+            typeName = diType->getName();
         }
         else
         {
@@ -156,7 +156,7 @@ public:
         typedefs.insert(diTypedef);
     }
 
-    const Set<const DIDerivedType *> &getTypedefs(void) const
+    const DenseSet<const DIDerivedType *> &getTypedefs(void) const
     {
         return typedefs;
     }
@@ -192,7 +192,7 @@ private:
     /// Type of this node.
     const DIType *diType;
     /// Typedefs which map to this type.
-    Set<const DIDerivedType *> typedefs;
+    DenseSet<const DIDerivedType *> typedefs;
     const GlobalValue* vtable;
     std::string typeName;
     size_t flags;
@@ -264,7 +264,7 @@ public:
             return false;
         }
 
-        return getNode(type)->getVTable() != nullptr;
+        return getNode(type)->getVTable() != NULL;
     }
 
     virtual const VTableSet &getCSVtblsBasedonCHA(CallSite cs) override;
@@ -340,7 +340,7 @@ public:
     }
 
     /// Returns all the aggregates contained (transitively) in base.
-    const Set<const DIType *> &getAggs(const DIType *base)
+    const DenseSet<const DIType *> &getAggs(const DIType *base)
     {
         base = getCanonicalType(base);
         assert(containingAggs.find(base) != containingAggs.end() && "DCHG: aggregates not gathered for base!");
@@ -355,25 +355,25 @@ protected:
     /// Whether this CHG is an extended CHG (first-field). Set by buildCHG.
     bool extended = false;
     /// Maps DITypes to their nodes.
-    Map<const DIType *, DCHNode *> diTypeToNodeMap;
+    DenseMap<const DIType *, DCHNode *> diTypeToNodeMap;
     /// Maps VTables to the DIType associated with them.
-    Map<const GlobalValue *, const DIType *> vtblToTypeMap;
+    DenseMap<const GlobalValue *, const DIType *> vtblToTypeMap;
     /// Maps types to all children (i.e. CHA).
-    Map<const DIType *, NodeBS> chaMap;
+    DenseMap<const DIType *, NodeBS> chaMap;
     /// Maps types to all children but also considering first field.
-    Map<const DIType *, NodeBS> chaFFMap;
+    DenseMap<const DIType *, NodeBS> chaFFMap;
     /// Maps types to a set with their vtable and all their children's.
-    Map<const DIType *, VTableSet> vtblCHAMap;
+    DenseMap<const DIType *, VTableSet> vtblCHAMap;
     /// Maps callsites to a set of potential virtual functions based on CHA.
-    Map<CallSite, VFunSet> csCHAMap;
+    DenseMap<CallSite, VFunSet> csCHAMap;
     /// Maps types to their canonical type (many-to-one).
-    Map<const DIType *, const DIType *> canonicalTypeMap;
+    DenseMap<const DIType *, const DIType *> canonicalTypeMap;
     /// Set of all possible canonical types (i.e. values of canonicalTypeMap).
-    Set<const DIType *> canonicalTypes;
+    DenseSet<const DIType *> canonicalTypes;
     /// Maps types to their flattened fields' types.
-    Map<const DIType *, std::vector<const DIType *>> fieldTypes;
+    DenseMap<const DIType *, std::vector<const DIType *>> fieldTypes;
     /// Maps aggregate types to all the aggregate types it transitively contains.
-    Map<const DIType *, Set<const DIType *>> containingAggs;
+    DenseMap<const DIType *, DenseSet<const DIType *>> containingAggs;
 
 private:
     /// Construction helper to process DIBasicTypes.
@@ -420,13 +420,13 @@ private:
         return diTypeToNodeMap.find(type) != diTypeToNodeMap.end();
     }
 
-    /// Returns the node for type (nullptr if it doesn't exist).
+    /// Returns the node for type (NULL if it doesn't exist).
     DCHNode *getNode(const DIType *type)
     {
         type = getCanonicalType(type);
         if (hasNode(type))
         {
-            return diTypeToNodeMap.at(type);
+            return diTypeToNodeMap.lookup(type);
         }
 
         return nullptr;
@@ -435,7 +435,7 @@ private:
 
     /// Creates an edge between from t1 to t2.
     DCHEdge *addEdge(const DIType *t1, const DIType *t2, DCHEdge::GEdgeKind et);
-    /// Returns the edge between t1 and t2 if it exists, returns nullptr otherwise.
+    /// Returns the edge between t1 and t2 if it exists, returns NULL otherwise.
     DCHEdge *hasEdge(const DIType *t1, const DIType *t2, DCHEdge::GEdgeKind et);
 
     /// Number of types (nodes) in the graph.

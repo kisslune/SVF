@@ -36,8 +36,6 @@
 #ifndef WORKLIST_H_
 #define WORKLIST_H_
 
-#include "Util/BasicTypes.h"
-
 #include <assert.h>
 #include <cstdlib>
 #include <vector>
@@ -50,7 +48,7 @@ namespace SVF
 /**
  * Worklist with "first come first go" order.
  * New nodes pushed at back and popped from front.
- * Elements in the list are unique as they're recorded by Set.
+ * Elements in the list are unique as they're recorded by std::set.
  */
 template<class Data>
 class List
@@ -61,7 +59,7 @@ class List
         ListNode(Data d)
         {
             data = d;
-            next = nullptr;
+            next = NULL;
         }
 
         ~ListNode() {}
@@ -70,21 +68,21 @@ class List
         ListNode* next;
     };
 
-    typedef Set<Data> DataSet;
+    typedef std::set<Data> DataSet;
     typedef ListNode Node;
 
 public:
     List()
     {
-        head = nullptr;
-        tail = nullptr;
+        head = NULL;
+        tail = NULL;
     }
 
     ~List() {}
 
     inline bool empty() const
     {
-        return (head == nullptr);
+        return (head == NULL);
     }
 
     inline bool find(Data data) const
@@ -97,7 +95,7 @@ public:
         if (nodeSet.find(data) == nodeSet.end())
         {
             Node* new_node = new Node(data);
-            if (head == nullptr)
+            if (head == NULL)
                 head = new_node;// the list is empty
             else
                 tail->next = new_node;
@@ -107,14 +105,14 @@ public:
 
     Data pop()
     {
-        assert(head != nullptr && "list is empty");
+        assert(head != NULL && "list is empty");
         /// get node from list head
         Node* head_node = head;
 
         /// change list head to the next node
         head = head->next;
-        if (head == nullptr)
-            tail = nullptr;	/// the last node is popped.
+        if (head == NULL)
+            tail = NULL;	/// the last node is popped.
 
         Data data = head_node->data;
         nodeSet.erase(data);
@@ -131,12 +129,12 @@ private:
 /**
  * Worklist with "first in first out" order.
  * New nodes will be pushed at back and popped from front.
- * Elements in the list are unique as they're recorded by Set.
+ * Elements in the list are unique as they're recorded by std::set.
  */
 template<class Data>
 class FIFOWorkList
 {
-    typedef Set<Data> DataSet;
+    typedef std::set<Data> DataSet;
     typedef std::deque<Data> DataDeque;
 public:
     FIFOWorkList() {}
@@ -197,12 +195,12 @@ private:
 /**
  * Worlist with "first in last out" order.
  * New nodes will be pushed at back and popped from back.
- * Elements in the list are unique as they're recorded by Set.
+ * Elements in the list are unique as they're recorded by std::set.
  */
 template<class Data>
 class FILOWorkList
 {
-    typedef Set<Data> DataSet;
+    typedef std::set<Data> DataSet;
     typedef std::vector<Data> DataVector;
 public:
     FILOWorkList() {}

@@ -29,40 +29,40 @@ public:
     typedef SCCDetection<PTACallGraph*> CallGraphSCC;
     typedef PTACallGraphEdge::CallInstSet CallInstSet;
     typedef PAG::CallSiteSet CallSiteSet;
-    typedef OrderedSet<DPIm> DPTItemSet;
-    typedef OrderedMap<DPIm, CPtSet> DPImToCPtSetMap;
-    typedef OrderedMap<DPIm,CVar> DPMToCVarMap;
-    typedef OrderedMap<DPIm,DPIm> DPMToDPMMap;
-    typedef OrderedMap<NodeID, DPTItemSet> LocToDPMVecMap;
-    typedef OrderedSet<const SVFGEdge* > ConstSVFGEdgeSet;
+    typedef std::set<DPIm> DPTItemSet;
+    typedef std::map<DPIm, CPtSet> DPImToCPtSetMap;
+    typedef std::map<DPIm,CVar> DPMToCVarMap;
+    typedef std::map<DPIm,DPIm> DPMToDPMMap;
+    typedef DenseMap<NodeID, DPTItemSet> LocToDPMVecMap;
+    typedef DenseSet<const SVFGEdge* > ConstSVFGEdgeSet;
     typedef SVFGEdge::SVFGEdgeSetTy SVFGEdgeSet;
-    typedef OrderedMap<const SVFGNode*, DPTItemSet> StoreToPMSetMap;
+    typedef std::map<const SVFGNode*, DPTItemSet> StoreToPMSetMap;
 
     ///Constructor
-    DDAVFSolver(): outOfBudgetQuery(false),_pag(nullptr),_svfg(nullptr),_ander(nullptr),_callGraph(nullptr), _callGraphSCC(nullptr), _svfgSCC(nullptr), ddaStat(nullptr)
+    DDAVFSolver(): outOfBudgetQuery(false),_pag(NULL),_svfg(NULL),_ander(NULL),_callGraph(NULL), _callGraphSCC(NULL), _svfgSCC(NULL), ddaStat(NULL)
     {
     }
     /// Destructor
     virtual ~DDAVFSolver()
     {
-        if(_ander != nullptr)
+        if(_ander != NULL)
         {
             // AndersenWaveDiff::releaseAndersenWaveDiff();
-            _ander = nullptr;
+            _ander = NULL;
         }
 
-        if (_svfg != nullptr)
+        if (_svfg != NULL)
         {
             // DDASVFGBuilder::releaseDDASVFG();
-            _svfg = nullptr;
+            _svfg = NULL;
         }
 
-        if (_svfgSCC != nullptr)
+        if (_svfgSCC != NULL)
             delete _svfgSCC;
-        _svfgSCC = nullptr;
+        _svfgSCC = NULL;
 
-        _callGraph = nullptr;
-        _callGraphSCC = nullptr;
+        _callGraph = NULL;
+        _callGraphSCC = NULL;
     }
     /// Return candidate pointers for DDA
     inline NodeBS& getCandidateQueries()
@@ -79,12 +79,6 @@ public:
     virtual bool unionDDAPts(CPtSet& pts, const CPtSet& targetPts)
     {
         return (pts |= targetPts);
-    }
-    /// Union pts
-    virtual bool unionDDAPts(DPIm dpm, const CPtSet& targetPts)
-    {
-        CPtSet& pts = isTopLevelPtrStmt(dpm.getLoc()) ? dpmToTLCPtSetMap[dpm] : dpmToADCPtSetMap[dpm];
-        return pts |= targetPts;
     }
     /// Add pts
     virtual void addDDAPts(CPtSet& pts, const CVar& var)
@@ -367,7 +361,7 @@ protected:
         const SVFGNode* loadSrc = getDefSVFGNode(load->getPAGSrcNode());
         DBOUT(DDDA, SVFUtil::outs() << "!##start new computation from loadSrc svfgNode " <<
               load->getId() << " --> " << loadSrc->getId() << "\n");
-        const SVFGEdge* edge = getSVFG()->getIntraVFGEdge(loadSrc,load,SVFGEdge::IntraDirectVF);
+        const SVFGEdge* edge = getSVFG()->getSVFGEdge(loadSrc,load,SVFGEdge::IntraDirectVF);
         assert(edge && "Edge not found!!");
         backwardPropDpm(pts,load->getPAGSrcNodeID(),oldDpm,edge);
 
@@ -378,7 +372,7 @@ protected:
         const SVFGNode* storeDst = getDefSVFGNode(store->getPAGDstNode());
         DBOUT(DDDA, SVFUtil::outs() << "!##start new computation from storeDst svfgNode " <<
               store->getId() << " --> " << storeDst->getId() << "\n");
-        const SVFGEdge* edge = getSVFG()->getIntraVFGEdge(storeDst,store,SVFGEdge::IntraDirectVF);
+        const SVFGEdge* edge = getSVFG()->getSVFGEdge(storeDst,store,SVFGEdge::IntraDirectVF);
         assert(edge && "Edge not found!!");
         backwardPropDpm(pts,store->getPAGDstNodeID(),oldDpm,edge);
     }
@@ -388,7 +382,7 @@ protected:
         const SVFGNode* storeSrc = getDefSVFGNode(store->getPAGSrcNode());
         DBOUT(DDDA, SVFUtil::outs() << "++backtrace to storeSrc from svfgNode " << getLoadDpm(oldDpm).getLoc()->getId() << " to "<<
               store->getId() << " to " << storeSrc->getId() <<"\n");
-        const SVFGEdge* edge = getSVFG()->getIntraVFGEdge(storeSrc,store,SVFGEdge::IntraDirectVF);
+        const SVFGEdge* edge = getSVFG()->getSVFGEdge(storeSrc,store,SVFGEdge::IntraDirectVF);
         assert(edge && "Edge not found!!");
         backwardPropDpm(pts,store->getPAGSrcNodeID(),oldDpm,edge);
     }
@@ -528,27 +522,28 @@ protected:
 
     /// Points-to Caching for top-level pointers and address-taken objects
     //@{
-    virtual inline const CPtSet& getCachedPointsTo(const DPIm& dpm)
+    virtual inline CPtSet& getCachedPointsTo(const DPIm& dpm)
     {
         if (isTopLevelPtrStmt(dpm.getLoc()))
             return getCachedTLPointsTo(dpm);
         else
             return getCachedADPointsTo(dpm);
     }
-    virtual inline void updateCachedPointsTo(const DPIm& dpm, const CPtSet& pts)
+    virtual inline void updateCachedPointsTo(const DPIm& dpm, CPtSet& pts)
     {
-        if (unionDDAPts(dpm, pts))
+        CPtSet& dpmPts = getCachedPointsTo(dpm);
+        if (unionDDAPts(dpmPts, pts))
         {
             DOSTAT(double start = DDAStat::getClk());
             reCompute(dpm);
             DOSTAT(ddaStat->_AnaTimeCyclePerQuery += DDAStat::getClk() - start);
         }
     }
-    virtual inline const CPtSet& getCachedTLPointsTo(const DPIm& dpm)
+    virtual inline CPtSet& getCachedTLPointsTo(const DPIm& dpm)
     {
         return dpmToTLCPtSetMap[dpm];
     }
-    virtual inline const CPtSet& getCachedADPointsTo(const DPIm& dpm)
+    virtual inline CPtSet& getCachedADPointsTo(const DPIm& dpm)
     {
         return dpmToADCPtSetMap[dpm];
     }
@@ -580,7 +575,7 @@ protected:
     /// SVFG SCC detection
     inline void SVFGSCCDetection()
     {
-        if(_svfgSCC==nullptr)
+        if(_svfgSCC==NULL)
         {
             _svfgSCC = new SVFGSCC(getSVFG());
         }

@@ -56,7 +56,7 @@ std::string printPts(PointerAnalysis* pta, Value* val)
     raw_string_ostream rawstr(str);
 
     NodeID pNodeId = pta->getPAG()->getValueNode(val);
-    const NodeBS& pts = pta->getPts(pNodeId);
+    NodeBS& pts = pta->getPts(pNodeId);
     for (NodeBS::iterator ii = pts.begin(), ie = pts.end();
             ii != ie; ii++)
     {
@@ -80,7 +80,7 @@ void traverseOnICFG(ICFG* icfg, const Instruction* inst)
 {
     ICFGNode* iNode = icfg->getBlockICFGNode(inst);
     FIFOWorkList<const ICFGNode*> worklist;
-    Set<const ICFGNode*> visited;
+    std::set<const ICFGNode*> visited;
     worklist.push(iNode);
 
     /// Traverse along VFG
@@ -111,7 +111,7 @@ void traverseOnVFG(const SVFG* vfg, Value* val)
     PAGNode* pNode = pag->getPAGNode(pag->getValueNode(val));
     const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
     FIFOWorkList<const VFGNode*> worklist;
-    Set<const VFGNode*> visited;
+    std::set<const VFGNode*> visited;
     worklist.push(vNode);
 
     /// Traverse along VFG
@@ -132,7 +132,7 @@ void traverseOnVFG(const SVFG* vfg, Value* val)
     }
 
     /// Collect all LLVM Values
-    for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
+    for(std::set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
     {
         const VFGNode* node = *it;
         /// can only query VFGNode involving top-level pointers (starting with % or @ in LLVM IR)
@@ -184,12 +184,6 @@ int main(int argc, char ** argv)
 
     /// Collect all successor nodes on ICFG
     /// traverseOnICFG(icfg, value);
-
-    // clean up memory
-    delete vfg;
-    delete svfg;
-    AndersenWaveDiff::releaseAndersenWaveDiff();
-    PAG::releasePAG();
 
     return 0;
 }

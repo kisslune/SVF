@@ -18,7 +18,7 @@ const DIType *TypeBasedHeapCloning::undefType = nullptr;
 const std::string TypeBasedHeapCloning::derefFnName = "deref";
 const std::string TypeBasedHeapCloning::mangledDerefFnName = "_Z5derefv";
 
-TypeBasedHeapCloning::TypeBasedHeapCloning(BVDataPTAImpl *pta)
+TypeBasedHeapCloning::TypeBasedHeapCloning(PointerAnalysis *pta)
 {
     this->pta = pta;
 }
@@ -35,7 +35,7 @@ void TypeBasedHeapCloning::setPAG(PAG *pag)
 
 bool TypeBasedHeapCloning::isBlkObjOrConstantObj(NodeID o) const
 {
-    if (isClone(o)) o = cloneToOriginalObj.at(o);
+    if (isClone(o)) o = cloneToOriginalObj.lookup(o);
     return SVFUtil::isa<ObjPN>(ppag->getPAGNode(o)) && ppag->isBlkObjOrConstantObj(o);
 }
 
@@ -58,7 +58,7 @@ void TypeBasedHeapCloning::setType(NodeID o, const DIType *t)
 const DIType *TypeBasedHeapCloning::getType(NodeID o) const
 {
     assert(objToType.find(o) != objToType.end() && "TBHC: object has no type?");
-    return objToType.at(o);
+    return objToType.lookup(o);
 }
 
 void TypeBasedHeapCloning::setAllocationSite(NodeID o, NodeID site)
@@ -69,7 +69,7 @@ void TypeBasedHeapCloning::setAllocationSite(NodeID o, NodeID site)
 NodeID TypeBasedHeapCloning::getAllocationSite(NodeID o) const
 {
     assert(objToAllocation.find(o) != objToAllocation.end() && "TBHC: object has no allocation site?");
-    return objToAllocation.at(o);
+    return objToAllocation.lookup(o);
 }
 
 const NodeBS TypeBasedHeapCloning::getObjsWithClones(void)
@@ -104,7 +104,7 @@ NodeID TypeBasedHeapCloning::getOriginalObj(NodeID c) const
     {
         assert(cloneToOriginalObj.find(c) != cloneToOriginalObj.end()
                && "TBHC: original object not set for clone?");
-        return cloneToOriginalObj.at(c);
+        return cloneToOriginalObj.lookup(c);
     }
 
     return c;
@@ -273,7 +273,7 @@ bool TypeBasedHeapCloning::init(NodeID loc, NodeID p, const DIType *tildet, bool
     assert(dchg && "TBHC: DCHG not set!");
     bool changed = false;
 
-    const PointsTo &pPt = pta->getPts(p);
+    PointsTo &pPt = pta->getPts(p);
     // The points-to set we will populate in the loop to fill pPt.
     PointsTo pNewPt;
 
@@ -302,8 +302,8 @@ bool TypeBasedHeapCloning::init(NodeID loc, NodeID p, const DIType *tildet, bool
             }
         }
 
-        const Set<const DIType *> &aggs = dchg->isAgg(tp)
-                                             ? dchg->getAggs(tp) : Set<const DIType *>();
+        const DenseSet<const DIType *> &aggs = dchg->isAgg(tp)
+                                               ? dchg->getAggs(tp) : DenseSet<const DIType *>();
 
         NodeID prop;
         bool filter = false;
@@ -400,8 +400,8 @@ bool TypeBasedHeapCloning::init(NodeID loc, NodeID p, const DIType *tildet, bool
     if (pPt != pNewPt)
     {
         // Seems fast enough to perform in the naive way.
-        pta->clearFullPts(p);
-        pta->unionPts(p, pNewPt);
+        pPt.clear();
+        pPt |= pNewPt;
         changed = true;
     }
 
@@ -500,19 +500,19 @@ const MDNode *TypeBasedHeapCloning::getRawCTirMetadata(const Value *v)
 
 NodeID TypeBasedHeapCloning::addCloneDummyObjNode(const MemObj *mem)
 {
-    NodeID id = NodeIDAllocator::get()->allocateObjectId();
-    return ppag->addObjNode(nullptr, new CloneDummyObjPN(id, mem), id);
+    NodeID id = ppag->getPAGNodeNum();
+    return ppag->addObjNode(NULL, new CloneDummyObjPN(id, mem), id);
 }
 
 NodeID TypeBasedHeapCloning::addCloneGepObjNode(const MemObj *mem, const LocationSet &l)
 {
-    NodeID id = NodeIDAllocator::get()->allocateObjectId();
+    NodeID id = ppag->getPAGNodeNum();
     return ppag->addObjNode(mem->getRefVal(), new CloneGepObjPN(mem, id, l), id);
 }
 
 NodeID TypeBasedHeapCloning::addCloneFIObjNode(const MemObj *mem)
 {
-    NodeID id = NodeIDAllocator::get()->allocateObjectId();
+    NodeID id = ppag->getPAGNodeNum();
     return ppag->addObjNode(mem->getRefVal(), new CloneFIObjPN(mem->getRefVal(), id, mem), id);
 }
 
@@ -569,7 +569,7 @@ void TypeBasedHeapCloning::validateTBHCTests(SVFModule*)
         {
             const CallSite &cs = SVFUtil::getLLVMCallSite(cbn->getCallSite());
             const Function *fn = cs.getCalledFunction();
-            if (fn == nullptr || !isAliasTestFunction(fn->getName().str()))
+            if (fn == nullptr || !isAliasTestFunction(fn->getName()))
             {
                 continue;
             }
