@@ -33,8 +33,6 @@ void PEG::build(PAG* p)
     // initialize nodes
     for (PAG::iterator it = p->begin(), eit = p->end(); it != eit; ++it)
     {
-        if (!it->second->hasIncomingEdge() && !it->second->hasOutgoingEdge())
-            continue;
         addPEGNode(it->first);
     }
 
@@ -99,7 +97,7 @@ void PEG::build(PAG* p)
         auto dEdges = getPEGNode(edge->getDstID())->getOutEdgeWithTy(Deref);
         if (dEdges.empty())
         {
-            NodeID derefId = p->addDummyObjNode(0);
+            NodeID derefId = p->addDummyValNode();
             addPEGNode(derefId);
             addEdge(edge->getDstID(), derefId, Deref);
             addEdge(edge->getSrcID(), derefId, Asgn);
@@ -113,7 +111,7 @@ void PEG::build(PAG* p)
         auto dEdges = getPEGNode(edge->getSrcID())->getOutEdgeWithTy(Deref);
         if (dEdges.empty())
         {
-            NodeID derefId = p->addDummyObjNode(0);
+            NodeID derefId = p->addDummyValNode();
             addPEGNode(derefId);
             addEdge(edge->getSrcID(), derefId, Deref);
             addEdge(derefId, edge->getDstID(), Asgn);
@@ -465,7 +463,7 @@ void PEG::updateNodeRepAndSubs(NodeID nodeId, NodeID newRepId)
  */
 void PEG::writeGraph(std::string name)
 {
-    std::ofstream outFile(name + ".g", std::ios::out);
+    std::ofstream outFile(name, std::ios::out);
     if (!outFile)
     {
         std::cout << "error opening file!!";
