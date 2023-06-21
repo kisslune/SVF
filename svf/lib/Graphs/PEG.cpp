@@ -75,11 +75,11 @@ void PEG::build(PAG* p)
     for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Ret))
         addEdge(edge->getSrcID(), edge->getDstID(), Asgn);
 
-    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::ThreadFork))
-        addEdge(edge->getSrcID(), edge->getDstID(), Asgn);
-
-    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::ThreadJoin))
-        addEdge(edge->getSrcID(), edge->getDstID(), Asgn);
+//    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::ThreadFork))
+//        addEdge(edge->getSrcID(), edge->getDstID(), Asgn);
+//
+//    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::ThreadJoin))
+//        addEdge(edge->getSrcID(), edge->getDstID(), Asgn);
 
     for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Gep))
     {
