@@ -55,19 +55,19 @@ void PEG::build(PAG* p)
     for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Copy))
         addEdge(edge->getSrcID(), edge->getDstID(), Asgn);
 
-    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Phi))
-    {
-        const PhiStmt* phi = SVFUtil::cast<PhiStmt>(edge);
-        for (const auto opVar : phi->getOpndVars())
-            addEdge(opVar->getId(), phi->getResID(), Asgn);
-    }
-
-    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Select))
-    {
-        const SelectStmt* sel = SVFUtil::cast<SelectStmt>(edge);
-        for (const auto opVar : sel->getOpndVars())
-            addEdge(opVar->getId(), sel->getResID(), Asgn);
-    }
+//    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Phi))
+//    {
+//        const PhiStmt* phi = SVFUtil::cast<PhiStmt>(edge);
+//        for (const auto opVar : phi->getOpndVars())
+//            addEdge(opVar->getId(), phi->getResID(), Asgn);
+//    }
+//
+//    for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Select))
+//    {
+//        const SelectStmt* sel = SVFUtil::cast<SelectStmt>(edge);
+//        for (const auto opVar : sel->getOpndVars())
+//            addEdge(opVar->getId(), sel->getResID(), Asgn);
+//    }
 
     for (PAGEdge* edge : p->getSVFStmtSet(PAGEdge::Call))
         addEdge(edge->getSrcID(), edge->getDstID(), Asgn);

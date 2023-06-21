@@ -26,18 +26,20 @@
  // Author: Yulei Sui,
  */
 
+#include "Graphs/IVFG.h"
+#include "Graphs/PEG.h"
 #include "SVF-LLVM/LLVMUtil.h"
 #include "SVF-LLVM/SVFIRBuilder.h"
 #include "Util/CommandLine.h"
 #include "Util/Options.h"
-#include "Graphs/PEG.h"
+#include "WPA/Andersen.h"
 
 using namespace llvm;
 using namespace std;
 using namespace SVF;
 
 static Option<bool> PEGGen("peg", "Generate PEG", false);
-static Option<bool> IVFGGen("vfg", "Generate VFG", false);
+static Option<bool> VFGGen("vfg", "Generate VFG", false);
 
 int main(int argc, char** argv)
 {
@@ -65,6 +67,15 @@ int main(int argc, char** argv)
         PEG* graph = new PEG();
         graph->build(pag);
         graph->writeGraph("peg.g");
+    }
+    else if (VFGGen())
+    {
+        AndersenWaveDiff* ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
+        auto memSSA = new SaberSVFGBuilder();
+        memSSA->buildFullSVFG(ander);
+        IVFG* graph = new IVFG();
+        graph->build(memSSA->getSVFG());
+        graph->writeGraph("vfg.g");
     }
 
     delete[] arg_value;
