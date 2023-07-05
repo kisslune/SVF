@@ -861,4 +861,10 @@ const Option<u32_t> Options::LoopBound(
     1
 );
 
+const Option<std::string> Options::writeGraph(
+    "write-graph",
+    "Write graph",
+    ""
+);
+
 } // namespace SVF.

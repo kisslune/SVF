@@ -66,7 +66,10 @@ int main(int argc, char** argv)
     {
         PEG* graph = new PEG();
         graph->build(pag);
-        graph->writeGraph("peg.g");
+        std::string gName = "peg.g";
+        if (!Options::writeGraph().empty())
+            gName = Options::writeGraph();
+        graph->writeGraph(gName);
     }
     else if (VFGGen())
     {
@@ -75,7 +78,10 @@ int main(int argc, char** argv)
         memSSA->buildFullSVFG(ander);
         IVFG* graph = new IVFG();
         graph->build(memSSA->getSVFG());
-        graph->writeGraph("vfg.g");
+        std::string gName = "vfg.g";
+        if (!Options::writeGraph().empty())
+            gName = Options::writeGraph();
+        graph->writeGraph(gName);
     }
 
     delete[] arg_value;

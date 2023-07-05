@@ -241,7 +241,7 @@ void PEG::cleanGraph()
         Set<NodeID> dChildren;
         for (auto edge : n->getOutEdgeWithTy(Deref))
             dChildren.insert(edge->getDstID());
-        
+
         if (dChildren.size() > 1)
         {
             NodeID dRep = *dChildren.begin();

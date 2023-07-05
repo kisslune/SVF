@@ -265,6 +265,8 @@ public:
     // Loop Analysis
     static const Option<bool> LoopAnalysis;
     static const Option<u32_t> LoopBound;
+
+    static const Option<std::string> writeGraph;
 };
 }  // namespace SVF
 
