@@ -66,7 +66,7 @@ int main(int argc, char** argv)
     {
         PEG* graph = new PEG();
         graph->build(pag);
-        std::string gName = "peg.g";
+        std::string gName = svfModule->getModuleIdentifier() + ".peg.dig";
         if (!Options::writeGraph().empty())
             gName = Options::writeGraph();
         graph->writeGraph(gName);
@@ -75,10 +75,10 @@ int main(int argc, char** argv)
     {
         AndersenWaveDiff* ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
         auto memSSA = new SaberSVFGBuilder();
-        memSSA->buildFullSVFG(ander);
+        memSSA->buildPTROnlySVFG(ander);
         IVFG* graph = new IVFG();
         graph->build(memSSA->getSVFG());
-        std::string gName = "vfg.g";
+        std::string gName = svfModule->getModuleIdentifier() + ".vfg.dig";
         if (!Options::writeGraph().empty())
             gName = Options::writeGraph();
         graph->writeGraph(gName);

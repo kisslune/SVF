@@ -158,19 +158,30 @@ void IVFG::readGraph(std::string fname)
  */
 void IVFG::cleanNodes(WorkList& tree)
 {
-    // remove trivial trees
-    while (!tree.empty())
+    // remove singular nodes
+    std::vector<CFLNode*> nodesToRemove;
+    for (auto& it : *this)
     {
-        NodeID nodeId = tree.pop();
-        if (!hasVFGNode(nodeId))
-            continue;
-
-        CFLNode* node = getVFGNode(nodeId);
-        if (node->hasIncomingEdge() && node->hasOutgoingEdge())
-            continue;
-
-        removeVFGNode(node);
+        if (!it.second->hasIncomingEdge() && !it.second->hasOutgoingEdge())
+            nodesToRemove.push_back(it.second);
     }
+
+    for (auto node : nodesToRemove)
+        removeVFGNode(node);
+
+    // remove trivial trees
+//    while (!tree.empty())
+//    {
+//        NodeID nodeId = tree.pop();
+//        if (!hasVFGNode(nodeId))
+//            continue;
+//
+//        CFLNode* node = getVFGNode(nodeId);
+//        if (node->hasIncomingEdge() && node->hasOutgoingEdge())
+//            continue;
+//
+//        removeVFGNode(node);
+//    }
 }
 
 //@{
