@@ -31,7 +31,7 @@
 #define SymbolTableBuilder_H_
 
 #include "SVF-LLVM/LLVMModule.h"
-#include "SVFIR/SymbolTableInfo.h"
+#include "SVFIR/ObjTypeInfo.h"
 
 /*
 * This class is to build SymbolTableInfo, MemObjs and ObjTypeInfo
@@ -39,23 +39,26 @@
 namespace SVF
 {
 
+class ObjTypeInference;
+
 class SymbolTableBuilder
 {
-
+    friend class SVFIRBuilder;
 private:
-    SymbolTableInfo* symInfo;
+    SVFIR* svfir;
 
 public:
     /// Constructor
-    SymbolTableBuilder(SymbolTableInfo* si): symInfo(si)
+    SymbolTableBuilder(SVFIR* ir): svfir(ir)
     {
     }
 
     /// Start building memory model
-    void buildMemModel(SVFModule* svfModule);
+    void buildMemModel();
 
     /// Return size of this object based on LLVM value
-    u32_t getObjSize(const Type* type);
+    u32_t getNumOfElements(const Type* ety);
+
 
 protected:
 
@@ -81,6 +84,22 @@ protected:
     void handleCE(const Value* val);
     // @}
 
+    inline LLVMModuleSet* llvmModuleSet()
+    {
+        return LLVMModuleSet::getLLVMModuleSet();
+    }
+
+    ObjTypeInference* getTypeInference();
+
+    /// Forward collect all possible infer sites starting from a value
+    const Type* inferObjType(const Value *startValue);
+
+    /// Get the reference type of heap/static object from an allocation site.
+    //@{
+    const Type *inferTypeOfHeapObjOrStaticObj(const Instruction* inst);
+    //@}
+
+
     /// Create an objectInfo based on LLVM value
     ObjTypeInfo* createObjTypeInfo(const Value* val);
 
@@ -89,20 +108,23 @@ protected:
     /// Analyse types of all flattened fields of this object
     void analyzeObjType(ObjTypeInfo* typeinfo, const Value* val);
     /// Analyse types of heap and static objects
-    void analyzeHeapObjType(ObjTypeInfo* typeinfo, const Value* val);
+    u32_t analyzeHeapObjType(ObjTypeInfo* typeinfo, const Value* val);
     /// Analyse types of heap and static objects
     void analyzeStaticObjType(ObjTypeInfo* typeinfo, const Value* val);
 
+    /// Analyze byte size of heap alloc function (e.g. malloc/calloc/...)
+    u32_t analyzeHeapAllocByteSize(const Value* val);
+
     ///Get a reference to the components of struct_info.
-    /// Number of flattenned elements of an array or struct
+    /// Number of flattened elements of an array or struct
     u32_t getNumOfFlattenElements(const Type* T);
 
     ///Get a reference to StructInfo.
     StInfo* getOrAddSVFTypeInfo(const Type* T);
 
-    MemObj* createBlkObj(SymID symId);
+    ObjTypeInfo* createBlkObjTypeInfo(NodeID symId);
 
-    MemObj* createConstantObj(SymID symId);
+    ObjTypeInfo* createConstantObjTypeInfo(NodeID symId);
 };
 
 } // End namespace SVF

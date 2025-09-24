@@ -10,6 +10,8 @@
 #ifndef CFLNODE_H_
 #define CFLNODE_H_
 
+#include "CFLEdge.h"
+
 namespace SVF
 {
 /*!
@@ -39,7 +41,7 @@ private:
 public:
     static std::set<CFLEdge::GEdgeKind> directEdgeKinds;
 
-    CFLNode(NodeID i) : GenericPEGNodeTy(i, 0), _isSrc(false), _isSnk(false)
+    CFLNode(NodeID i) : GenericPEGNodeTy(i, OtherKd), _isSrc(false), _isSnk(false)
     {
     }
 

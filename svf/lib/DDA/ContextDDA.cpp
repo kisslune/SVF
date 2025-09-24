@@ -63,7 +63,7 @@ void ContextDDA::initialize()
 {
     CondPTAImpl<ContextCond>::initialize();
     buildSVFG(pag);
-    setCallGraph(getPTACallGraph());
+    setCallGraph(getCallGraph());
     setCallGraphSCC(getCallGraphSCC());
     stat = setDDAStat(new DDAStat(this));
     flowDDA->initialize();
@@ -171,7 +171,8 @@ CxtPtSet ContextDDA::processGepPts(const GepSVFGNode* gep, const CxtPtSet& srcPt
             }
             else
             {
-                CxtVar var(ptd.get_cond(),getGepObjVar(ptd.get_id(),gepStmt->getLocationSet()));
+                CxtVar var(ptd.get_cond(),getGepObjVar(ptd.get_id(),
+                                                       gepStmt->getAccessPath().getConstantStructFldIdx()));
                 tmpDstPts.set(var);
             }
         }
@@ -185,7 +186,7 @@ CxtPtSet ContextDDA::processGepPts(const GepSVFGNode* gep, const CxtPtSet& srcPt
     return tmpDstPts;
 }
 
-bool ContextDDA::testIndCallReachability(CxtLocDPItem& dpm, const SVFFunction* callee, const CallICFGNode* cs)
+bool ContextDDA::testIndCallReachability(CxtLocDPItem& dpm, const FunObjVar* callee, const CallICFGNode* cs)
 {
     if(getPAG()->isIndirectCallSites(cs))
     {
@@ -194,7 +195,7 @@ bool ContextDDA::testIndCallReachability(CxtLocDPItem& dpm, const SVFFunction* c
         CxtVar funptrVar(dpm.getCondVar().get_cond(), id);
         CxtLocDPItem funptrDpm = getDPIm(funptrVar,getDefSVFGNode(node));
         PointsTo pts = getBVPointsTo(findPT(funptrDpm));
-        if(pts.test(getPAG()->getObjectNode(callee)))
+        if(pts.test(callee->getId()))
             return true;
         else
             return false;
@@ -216,11 +217,11 @@ CallSiteID ContextDDA::getCSIDAtCall(CxtLocDPItem&, const SVFGEdge* edge)
         svfg_csId = SVFUtil::cast<CallIndSVFGEdge>(edge)->getCallSiteId();
 
     const CallICFGNode* cbn = getSVFG()->getCallSite(svfg_csId);
-    const SVFFunction* callee = edge->getDstNode()->getFun();
+    const FunObjVar* callee = edge->getDstNode()->getFun();
 
-    if(getPTACallGraph()->hasCallSiteID(cbn,callee))
+    if(getCallGraph()->hasCallSiteID(cbn,callee))
     {
-        return getPTACallGraph()->getCallSiteID(cbn,callee);
+        return getCallGraph()->getCallSiteID(cbn,callee);
     }
 
     return 0;
@@ -240,11 +241,11 @@ CallSiteID ContextDDA::getCSIDAtRet(CxtLocDPItem&, const SVFGEdge* edge)
         svfg_csId = SVFUtil::cast<RetIndSVFGEdge>(edge)->getCallSiteId();
 
     const CallICFGNode* cbn = getSVFG()->getCallSite(svfg_csId);
-    const SVFFunction* callee = edge->getSrcNode()->getFun();
+    const FunObjVar* callee = edge->getSrcNode()->getFun();
 
-    if(getPTACallGraph()->hasCallSiteID(cbn,callee))
+    if(getCallGraph()->hasCallSiteID(cbn,callee))
     {
-        return getPTACallGraph()->getCallSiteID(cbn,callee);
+        return getCallGraph()->getCallSiteID(cbn,callee);
     }
 
     return 0;
@@ -264,8 +265,8 @@ bool ContextDDA::handleBKCondition(CxtLocDPItem& dpm, const SVFGEdge* edge)
 
             if(isEdgeInRecursion(csId))
             {
-                DBOUT(DDDA,outs() << "\t\t call edge " << getPTACallGraph()->getCallerOfCallSite(csId)->getName() <<
-                      "=>" << getPTACallGraph()->getCalleeOfCallSite(csId)->getName() << "in recursion \n");
+                DBOUT(DDDA,outs() << "\t\t call edge " << getCallGraph()->getCallerOfCallSite(csId)->getName() <<
+                      "=>" << getCallGraph()->getCalleeOfCallSite(csId)->getName() << "in recursion \n");
                 popRecursiveCallSites(dpm);
             }
             else
@@ -292,8 +293,8 @@ bool ContextDDA::handleBKCondition(CxtLocDPItem& dpm, const SVFGEdge* edge)
 
             if(isEdgeInRecursion(csId))
             {
-                DBOUT(DDDA,outs() << "\t\t return edge " << getPTACallGraph()->getCalleeOfCallSite(csId)->getName() <<
-                      "=>" << getPTACallGraph()->getCallerOfCallSite(csId)->getName() << "in recursion \n");
+                DBOUT(DDDA,outs() << "\t\t return edge " << getCallGraph()->getCalleeOfCallSite(csId)->getName() <<
+                      "=>" << getCallGraph()->getCallerOfCallSite(csId)->getName() << "in recursion \n");
                 popRecursiveCallSites(dpm);
             }
             else
@@ -333,18 +334,20 @@ bool ContextDDA::handleBKCondition(CxtLocDPItem& dpm, const SVFGEdge* edge)
 /// (2) not inside loop
 bool ContextDDA::isHeapCondMemObj(const CxtVar& var, const StoreSVFGNode*)
 {
-    const MemObj* mem = _pag->getObject(getPtrNodeID(var));
-    assert(mem && "memory object is null??");
-    if (mem->isHeap())
+    const BaseObjVar* obj = _pag->getBaseObject(getPtrNodeID(var));
+    assert(obj && "base object is null??");
+    const BaseObjVar* baseVar = _pag->getBaseObject(getPtrNodeID(var));
+    assert(baseVar && "base object is null??");
+    if (SVFUtil::isa<HeapObjVar, DummyObjVar>(baseVar))
     {
-        if (!mem->getValue())
+        if (!isa<DummyObjVar>(baseVar))
         {
             PAGNode *pnode = _pag->getGNode(getPtrNodeID(var));
             GepObjVar* gepobj = SVFUtil::dyn_cast<GepObjVar>(pnode);
             if (gepobj != nullptr)
             {
                 assert(SVFUtil::isa<DummyObjVar>(_pag->getGNode(gepobj->getBaseNode()))
-                       && "emtpy refVal in a gep object whose base is a non-dummy object");
+                       && "empty refVal in a gep object whose base is a non-dummy object");
             }
             else
             {
@@ -353,14 +356,14 @@ bool ContextDDA::isHeapCondMemObj(const CxtVar& var, const StoreSVFGNode*)
             }
             return true;
         }
-        else if(const SVFInstruction* mallocSite = SVFUtil::dyn_cast<SVFInstruction>(mem->getValue()))
+        else if(const ICFGNode* node = obj->getICFGNode())
         {
-            const SVFFunction* svfFun = mallocSite->getFunction();
+            const FunObjVar* svfFun = node->getFun();
             if(_ander->isInRecursion(svfFun))
                 return true;
             if(var.get_cond().isConcreteCxt() == false)
                 return true;
-            if(_pag->getICFG()->isInLoop(mallocSite))
+            if(_pag->getICFG()->isInLoop(node))
                 return true;
         }
     }

@@ -4,13 +4,10 @@
 #define OPTIONS_H_
 
 #include <sstream>
-#include "FastCluster/fastcluster.h"
 #include "Util/CommandLine.h"
 #include "Util/PTAStat.h"
 #include "MemoryModel/PointerAnalysisImpl.h"
 #include "Util/NodeIDAllocator.h"
-#include "MSSA/MemSSA.h"
-#include "WPA/WPAPass.h"
 
 namespace SVF
 {
@@ -53,7 +50,7 @@ public:
     /// TODO: we can separate it into two options, and make Clusterer::cluster take in a method
     ///       argument rather than plugging Options::ClusterMethod *inside* Clusterer::cluster
     ///       directly, but it seems we will always want single anyway, and this is for testing.
-    static const OptionMap<enum hclust_fast_methods> ClusterMethod;
+    static const OptionMap<u32_t> ClusterMethod;
 
     /// Cluster partitions separately.
     static const Option<bool> RegionedClustering;
@@ -61,7 +58,7 @@ public:
     /// Align identifiers in each region to a word.
     static const Option<bool> RegionAlign;
 
-    /// Predict occurences of points-to sets in the staged points-to set to
+    /// Predict occurrences of points-to sets in the staged points-to set to
     /// weigh more common points-to sets as more important.
     static const Option<bool> PredictPtOcc;
 
@@ -79,17 +76,6 @@ public:
 
     // ContextDDA.cpp
     static const Option<u32_t> CxtBudget;
-
-    // DDAClient.cpp
-    static const Option<bool> SingleLoad;
-    static const Option<bool> DumpFree;
-    static const Option<bool> DumpUninitVar;
-    static const Option<bool> DumpUninitPtr;
-    static const Option<bool> DumpSUPts;
-    static const Option<bool> DumpSUStore;
-    static const Option<bool> MallocOnly;
-    static const Option<bool> TaintUninitHeap;
-    static const Option<bool> TaintUninitStack;
 
     // DDAPass.cpp
     static const Option<u32_t> MaxPathLen;
@@ -121,24 +107,25 @@ public:
     // Sparse value-flow graph (VFG.cpp)
     static const Option<bool> DumpVFG;
 
-    // Location set for modeling abstract memory object (LocationSet.cpp)
-    static const Option<bool> SingleStride;
-
     // Base class of pointer analyses (PointerAnalysis.cpp)
     static const Option<bool> TypePrint;
     static const Option<bool> FuncPointerPrint;
     static const Option<bool> PTSPrint;
     static const Option<bool> PTSAllPrint;
+    static const Option<bool> PrintFieldWithBasePrefix;
     static const Option<bool> PStat;
     static const Option<u32_t> StatBudget;
     static const Option<bool> PAGDotGraph;
     static const Option<bool> ShowSVFIRValue;
     static const Option<bool> DumpICFG;
+    static const Option<std::string> DumpJson;
+    static const Option<bool> ReadJson;
     static const Option<bool> CallGraphDotGraph;
     static const Option<bool> PAGPrint;
     static const Option<u32_t> IndirectCallLimit;
-    static const Option<bool> UsePreCompFieldSensitive;
+    static Option<bool> UsePreCompFieldSensitive;
     static const Option<bool> EnableAliasCheck;
+    static const Option<bool> EnableTypeCheck;
     static const Option<bool> EnableThreadCallGraph;
     static const Option<bool> ConnectVCallOnCHA;
 
@@ -152,7 +139,7 @@ public:
     static const Option<bool> DumpMSSA;
     static const Option<std::string> MSSAFun;
     // static const llvm::cl::opt<string> MSSAFun;
-    static const OptionMap<MemSSA::MemPartition> MemPar;
+    static const OptionMap<u32_t> MemPar;
 
     // SVFG builder (SVFGBuilder.cpp)
     static const Option<bool> SVFGWithIndirectCall;
@@ -161,35 +148,16 @@ public:
     static const Option<std::string> WriteSVFG;
     static const Option<std::string> ReadSVFG;
 
-    // FSMPTA.cpp
-    static const Option<bool> UsePCG;
-    static const Option<bool> IntraLock;
-    static const Option<bool> ReadPrecisionTDEdge;
-    static const Option<u32_t> AddModelFlag;
-
     // LockAnalysis.cpp
+    static const Option<bool> IntraLock;
     static const Option<bool> PrintLockSpan;
 
     // MHP.cpp
     static const Option<bool> PrintInterLev;
     static const Option<bool> DoLockAnalysis;
 
-    // MTA.cpp
-    static const Option<bool> AndersenAnno;
-    static const Option<bool> FSAnno;
-
-    // MTAAnnotator.cpp
-    static const Option<u32_t> AnnoFlag;
-
-    // MTAResultValidator.cpp
-    static const Option<bool> PrintValidRes;
-
-    static const Option<bool> LockValid;
     //MTAStat.cpp
     static const Option<bool> AllPairMHP;
-
-    // PCG.cpp
-    //const Option<bool> TDPrint
 
     // TCT.cpp
     static const Option<bool> TCTDotGraph;
@@ -213,13 +181,16 @@ public:
 
     // SymbolTableInfo.cpp
     static const Option<bool> LocMemModel;
-    static const Option<bool> ModelConsts;
-    static const Option<bool> ModelArrays;
+    static Option<bool> ModelConsts;
+    static Option<bool> ModelArrays;
     static const Option<bool> CyclicFldIdx;
     static const Option<bool> SymTabPrint;
 
     // Conditions.cpp
     static const Option<u32_t> MaxZ3Size;
+
+    // BoundedZ3Expr.cpp
+    static const Option<u32_t> MaxBVLen;
 
     // SaberCondAllocator.cpp
     static const Option<bool> PrintPathCond;
@@ -243,11 +214,12 @@ public:
     static const Option<bool> VtableInSVFIR;
 
     // WPAPass.cpp
+    static const Option<std::string> ExtAPIPath;
     static const Option<bool> AnderSVFG;
     static const Option<bool> SABERFULLSVFG;
     static const Option<bool> PrintAliases;
     static OptionMultiple<PointerAnalysis::PTATY> PASelected;
-    static OptionMultiple<WPAPass::AliasCheckRule> AliasRule;
+    static OptionMultiple<u32_t> AliasRule;
 
     // DOTGraphTraits
     static const Option<bool> ShowHiddenNode;
@@ -261,10 +233,40 @@ public:
     static const Option<bool>  CFLSVFG;
     static const Option<bool> POCRAlias;
     static const Option<bool> POCRHybrid;
+    static const Option<bool> Customized;
 
     // Loop Analysis
     static const Option<bool> LoopAnalysis;
     static const Option<u32_t> LoopBound;
+
+    // Abstract Execution
+    static const Option<u32_t> WidenDelay;
+    /// recursion handling mode, Default: TOP
+    static const OptionMap<u32_t> HandleRecur;
+    /// the max time consumptions (seconds). Default: 4 hours 14400s
+    static const Option<u32_t> Timeout;
+    /// bug info output file, Default: output.db
+    static const Option<std::string> OutputName;
+    /// buffer overflow checker, Default: false
+    static const Option<bool> BufferOverflowCheck;
+    /// nullptr dereference checker, Default: false
+    static const Option<bool> NullDerefCheck;
+    /// memory leak check, Default: false
+    static const Option<bool> MemoryLeakCheck;
+    /// file open close checker, Default: false
+    static const Option<bool> FileCheck;
+    /// double free checker, Default: false
+    static const Option<bool> DFreeCheck;
+    /// data race checker, Default: false
+    static const Option<bool> RaceCheck;
+    /// if the access index of gepstmt is unknown, skip it, Default: false
+    static const Option<bool> GepUnknownIdx;
+    static const Option<bool> RunUncallFuncs;
+
+    static const Option<bool> ICFGMergeAdjacentNodes;
+
+    // float precision for symbolic abstraction
+    static const Option<u32_t> AEPrecision;
 
     static const Option<std::string> writeGraph;
 };

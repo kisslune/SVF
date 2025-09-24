@@ -28,7 +28,7 @@
  */
 
 #include <iomanip>
-#include "Graphs/PTACallGraph.h"
+#include "Graphs/CallGraph.h"
 #include "Util/PTAStat.h"
 #include "MemoryModel/PointerAnalysisImpl.h"
 #include "SVFIR/SVFIR.h"
@@ -36,15 +36,25 @@
 using namespace SVF;
 using namespace std;
 
-PTAStat::PTAStat(PointerAnalysis* p) : SVFStat(), pta(p)
+PTAStat::PTAStat(PointerAnalysis* p) : SVFStat(),
+    pta(p),
+    _vmrssUsageBefore(0),
+    _vmrssUsageAfter(0),
+    _vmsizeUsageBefore(0),
+    _vmsizeUsageAfter(0)
 {
+    u32_t vmrss = 0;
+    u32_t vmsize = 0;
+    SVFUtil::getMemoryUsageKB(&vmrss, &vmsize);
+    setMemUsageBefore(vmrss, vmsize);
 }
 
 void PTAStat::performStat()
 {
-    callgraphStat();
 
     SVFStat::performStat();
+
+    callgraphStat();
 
     SVFIR* pag = SVFIR::getPAG();
     for(SVFIR::iterator it = pag->begin(), eit = pag->end(); it!=eit; ++it)
@@ -59,12 +69,19 @@ void PTAStat::performStat()
         }
     }
     PTNumStatMap["LocalVarInRecur"] = localVarInRecursion.count();
+
+    u32_t vmrss = 0;
+    u32_t vmsize = 0;
+    SVFUtil::getMemoryUsageKB(&vmrss, &vmsize);
+    setMemUsageAfter(vmrss, vmsize);
+    timeStatMap["MemoryUsageVmrss"] = _vmrssUsageAfter - _vmrssUsageBefore;
+    timeStatMap["MemoryUsageVmsize"] = _vmsizeUsageAfter - _vmsizeUsageBefore;
 }
 
 void PTAStat::callgraphStat()
 {
 
-    PTACallGraph* graph = pta->getPTACallGraph();
+    CallGraph* graph = pta->getCallGraph();
     PointerAnalysis::CallGraphSCC* callgraphSCC = new PointerAnalysis::CallGraphSCC(graph);
     callgraphSCC->find();
 
@@ -76,8 +93,8 @@ void PTAStat::callgraphStat()
     unsigned edgeInCycle = 0;
 
     NodeSet sccRepNodeSet;
-    PTACallGraph::iterator it = graph->begin();
-    PTACallGraph::iterator eit = graph->end();
+    CallGraph::iterator it = graph->begin();
+    CallGraph::iterator eit = graph->end();
     for (; it != eit; ++it)
     {
         totalNode++;
@@ -90,11 +107,11 @@ void PTAStat::callgraphStat()
                 maxNodeInCycle = subNodes.count();
         }
 
-        PTACallGraphNode::const_iterator edgeIt = it->second->InEdgeBegin();
-        PTACallGraphNode::const_iterator edgeEit = it->second->InEdgeEnd();
+        CallGraphNode::const_iterator edgeIt = it->second->InEdgeBegin();
+        CallGraphNode::const_iterator edgeEit = it->second->InEdgeEnd();
         for (; edgeIt != edgeEit; ++edgeIt)
         {
-            PTACallGraphEdge *edge = *edgeIt;
+            CallGraphEdge*edge = *edgeIt;
             totalEdge+= edge->getDirectCalls().size() + edge->getIndirectCalls().size();
             if(callgraphSCC->repNode(edge->getSrcID()) == callgraphSCC->repNode(edge->getDstID()))
             {
@@ -112,7 +129,16 @@ void PTAStat::callgraphStat()
     PTNumStatMap["TotalEdge"] = totalEdge;
     PTNumStatMap["CalRetPairInCycle"] = edgeInCycle;
 
-    SVFStat::printStat("CallGraph Stats");
+    if(pta->getAnalysisTy() >= PointerAnalysis::PTATY::Andersen_BASE && pta->getAnalysisTy() <= PointerAnalysis::PTATY::Steensgaard_WPA)
+        SVFStat::printStat("PTACallGraph Stats (Andersen analysis)");
+    else if(pta->getAnalysisTy() >= PointerAnalysis::PTATY::FSDATAFLOW_WPA && pta->getAnalysisTy() <= PointerAnalysis::PTATY::FSCS_WPA)
+        SVFStat::printStat("PTACallGraph Stats (Flow-sensitive analysis)");
+    else if(pta->getAnalysisTy() >= PointerAnalysis::PTATY::CFLFICI_WPA && pta->getAnalysisTy() <= PointerAnalysis::PTATY::CFLFSCS_WPA)
+        SVFStat::printStat("PTACallGraph Stats (CFL-R analysis)");
+    else if(pta->getAnalysisTy() >= PointerAnalysis::PTATY::FieldS_DDA && pta->getAnalysisTy() <= PointerAnalysis::PTATY::Cxt_DDA)
+        SVFStat::printStat("PTACallGraph Stats (DDA analysis)");
+    else
+        SVFStat::printStat("PTACallGraph Stats");
 
     delete callgraphSCC;
 }

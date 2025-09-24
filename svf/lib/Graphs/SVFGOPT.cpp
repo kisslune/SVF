@@ -43,11 +43,30 @@ static std::string KeepAllSelfCycle = "all";
 static std::string KeepContextSelfCycle = "context";
 static std::string KeepNoneSelfCycle = "none";
 
+/// Optimised SVFGs aren't written to file; reads the full SVFG and optimises it
+void SVFGOPT::readAndOptSVFG(const std::string &filename)
+{
+    SVFG::readFile(filename);
+    optimiseSVFG();
+}
+
+/// Shouldn't write optimised SVFG to file; writes the built SVFG to file before optimisation
+void SVFGOPT::buildAndWriteSVFG(const std::string &filename)
+{
+    SVFG::buildSVFG();
+    SVFG::writeToFile(filename);
+    optimiseSVFG();
+}
 
 void SVFGOPT::buildSVFG()
 {
     SVFG::buildSVFG();
+    optimiseSVFG();
+}
 
+/// Separate function to optimise the SVFG to avoid duplicate code
+void SVFGOPT::optimiseSVFG()
+{
     if(Options::DumpVFG())
         dump("SVFG_before_opt");
 
@@ -62,6 +81,7 @@ void SVFGOPT::buildSVFG()
     stat->sfvgOptEnd();
 
 }
+
 /*!
  *
  */
@@ -340,7 +360,7 @@ bool SVFGOPT::canBeRemoved(const SVFGNode * node)
              FormalOUTSVFGNode, MSSAPHISVFGNode>(node))
     {
         /// Now each SVFG edge can only be associated with one call site id,
-        /// so if this node has both incoming call/ret and outgoting call/ret
+        /// so if this node has both incoming call/ret and outgoing call/ret
         /// edges, we don't remove this node.
         if (isConnectingTwoCallSites(node))
             return false;
@@ -438,7 +458,7 @@ void SVFGOPT::handleIntraValueFlow()
 /// 1. keepAllSelfCycle = TRUE: all self cycle edges are kept;
 /// 2. keepContextSelfCycle = TRUE: all self cycle edges related-to context are kept;
 /// 3. Otherwise, all self cycle edges are NOT kept.
-/// Return TRUE if some self cycle edges remaine in this node.
+/// Return TRUE if some self cycle edges remain in this node.
 bool SVFGOPT::checkSelfCycleEdges(const MSSAPHISVFGNode* node)
 {
     bool hasSelfCycle = false;

@@ -29,6 +29,7 @@
 
 #include "Util/Options.h"
 #include "SVFIR/SVFIR.h"
+#include "Graphs/CallGraph.h"
 
 using namespace SVF;
 using namespace SVFUtil;
@@ -36,9 +37,25 @@ using namespace SVFUtil;
 
 std::unique_ptr<SVFIR> SVFIR::pag;
 
-SVFIR::SVFIR(bool buildFromFile) : IRGraph(buildFromFile), svfModule(nullptr), icfg(nullptr), chgraph(nullptr)
+std::string SVFIR::pagReadFromTxt = "";
+
+SVFIR::SVFIR(bool buildFromFile) : IRGraph(buildFromFile), icfg(nullptr), chgraph(nullptr)
 {
 }
+
+
+const FunObjVar *SVFIR::getFunObjVar(const std::string &name)
+{
+    for (const auto &item: *callGraph)
+    {
+        if (item.second->getName() == name)
+        {
+            return item.second->getFunction();
+        }
+    }
+    return nullptr;
+}
+
 
 /*!
  * Add Address edge
@@ -61,7 +78,7 @@ AddrStmt* SVFIR::addAddrStmt(NodeID src, NodeID dst)
 /*!
  * Add Copy edge
  */
-CopyStmt* SVFIR::addCopyStmt(NodeID src, NodeID dst)
+CopyStmt* SVFIR::addCopyStmt(NodeID src, NodeID dst, CopyStmt::CopyKind type)
 {
     SVFVar* srcNode = getGNode(src);
     SVFVar* dstNode = getGNode(dst);
@@ -69,7 +86,7 @@ CopyStmt* SVFIR::addCopyStmt(NodeID src, NodeID dst)
         return nullptr;
     else
     {
-        CopyStmt* copyPE = new CopyStmt(srcNode, dstNode);
+        CopyStmt* copyPE = new CopyStmt(srcNode, dstNode, type);
         addToStmt2TypeMap(copyPE);
         addEdge(srcNode,dstNode, copyPE);
         return copyPE;
@@ -220,7 +237,7 @@ LoadStmt* SVFIR::addLoadStmt(NodeID src, NodeID dst)
  * Add Store edge
  * Note that two store instructions may share the same Store SVFStmt
  */
-StoreStmt* SVFIR::addStoreStmt(NodeID src, NodeID dst, const IntraICFGNode* curVal)
+StoreStmt* SVFIR::addStoreStmt(NodeID src, NodeID dst, const ICFGNode* curVal)
 {
     SVFVar* srcNode = getGNode(src);
     SVFVar* dstNode = getGNode(dst);
@@ -279,7 +296,7 @@ SVFStmt* SVFIR::addBlackHoleAddrStmt(NodeID node)
     if(Options::HandBlackHole())
         return pag->addAddrStmt(pag->getBlackHoleNode(), node);
     else
-        return pag->addCopyStmt(pag->getNullPtr(), node);
+        return pag->addCopyStmt(pag->getNullPtr(), node, CopyStmt::COPYVAL);
 }
 
 /*!
@@ -324,7 +341,7 @@ TDJoinPE* SVFIR::addThreadJoinPE(NodeID src, NodeID dst, const CallICFGNode* cs,
  * Find the base node id of src and connect base node to dst node
  * Create gep offset:  (offset + baseOff <nested struct gep size>)
  */
-GepStmt* SVFIR::addGepStmt(NodeID src, NodeID dst, const LocationSet& ls, bool constGep)
+GepStmt* SVFIR::addGepStmt(NodeID src, NodeID dst, const AccessPath& ap, bool constGep)
 {
 
     SVFVar* node = getGNode(src);
@@ -332,18 +349,18 @@ GepStmt* SVFIR::addGepStmt(NodeID src, NodeID dst, const LocationSet& ls, bool c
     {
         /// Since the offset from base to src is variant,
         /// the new gep edge being created is also a Variant GepStmt edge.
-        return addVariantGepStmt(src, dst, ls);
+        return addVariantGepStmt(src, dst, ap);
     }
     else
     {
-        return addNormalGepStmt(src, dst, ls);
+        return addNormalGepStmt(src, dst, ap);
     }
 }
 
 /*!
  * Add normal (Gep) edge
  */
-GepStmt* SVFIR::addNormalGepStmt(NodeID src, NodeID dst, const LocationSet& ls)
+GepStmt* SVFIR::addNormalGepStmt(NodeID src, NodeID dst, const AccessPath& ap)
 {
     SVFVar* baseNode = getGNode(src);
     SVFVar* dstNode = getGNode(dst);
@@ -351,7 +368,7 @@ GepStmt* SVFIR::addNormalGepStmt(NodeID src, NodeID dst, const LocationSet& ls)
         return nullptr;
     else
     {
-        GepStmt* gepPE = new GepStmt(baseNode, dstNode, ls);
+        GepStmt* gepPE = new GepStmt(baseNode, dstNode, ap);
         addToStmt2TypeMap(gepPE);
         addEdge(baseNode, dstNode, gepPE);
         return gepPE;
@@ -362,7 +379,7 @@ GepStmt* SVFIR::addNormalGepStmt(NodeID src, NodeID dst, const LocationSet& ls)
  * Add variant(Gep) edge
  * Find the base node id of src and connect base node to dst node
  */
-GepStmt* SVFIR::addVariantGepStmt(NodeID src, NodeID dst, const LocationSet& ls)
+GepStmt* SVFIR::addVariantGepStmt(NodeID src, NodeID dst, const AccessPath& ap)
 {
     SVFVar* baseNode = getGNode(src);
     SVFVar* dstNode = getGNode(dst);
@@ -370,7 +387,7 @@ GepStmt* SVFIR::addVariantGepStmt(NodeID src, NodeID dst, const LocationSet& ls)
         return nullptr;
     else
     {
-        GepStmt* gepPE = new GepStmt(baseNode, dstNode,ls, true);
+        GepStmt* gepPE = new GepStmt(baseNode, dstNode, ap, true);
         addToStmt2TypeMap(gepPE);
         addEdge(baseNode, dstNode, gepPE);
         return gepPE;
@@ -381,31 +398,31 @@ GepStmt* SVFIR::addVariantGepStmt(NodeID src, NodeID dst, const LocationSet& ls)
 
 /*!
  * Add a temp field value node, this method can only invoked by getGepValVar
- * due to constaint expression, curInst is used to distinguish different instructions (e.g., memorycpy) when creating GepValVar.
+ * due to constraint expression, curInst is used to distinguish different instructions (e.g., memorycpy) when creating GepValVar.
  */
-NodeID SVFIR::addGepValNode(const SVFValue* curInst,const SVFValue* gepVal, const LocationSet& ls, NodeID i, const SVFType* type)
+NodeID SVFIR::addGepValNode(NodeID curInst,const ValVar* baseVar, const AccessPath& ap, NodeID i, const SVFType* type, const ICFGNode* icn)
 {
-    NodeID base = getBaseValVar(getValueNode(gepVal));
+    NodeID base = baseVar->getId();
     //assert(findPAGNode(i) == false && "this node should not be created before");
-    assert(0==GepValObjMap[curInst].count(std::make_pair(base, ls))
+    assert(0==GepValObjMap[curInst].count(std::make_pair(base, ap))
            && "this node should not be created before");
-    GepValObjMap[curInst][std::make_pair(base, ls)] = i;
-    GepValVar *node = new GepValVar(gepVal, i, ls, type);
-    return addValNode(gepVal, node, i);
+    GepValObjMap[curInst][std::make_pair(base, ap)] = i;
+    GepValVar *node = new GepValVar(baseVar, i, ap, type, icn);
+    return addValNode(node);
 }
 
 /*!
  * Given an object node, find its field object node
  */
-NodeID SVFIR::getGepObjVar(NodeID id, const LocationSet& ls)
+NodeID SVFIR::getGepObjVar(NodeID id, const APOffset& apOffset)
 {
     SVFVar* node = pag->getGNode(id);
     if (GepObjVar* gepNode = SVFUtil::dyn_cast<GepObjVar>(node))
-        return getGepObjVar(gepNode->getMemObj(), gepNode->getLocationSet() + ls);
-    else if (FIObjVar* baseNode = SVFUtil::dyn_cast<FIObjVar>(node))
-        return getGepObjVar(baseNode->getMemObj(), ls);
+        return getGepObjVar(gepNode->getBaseObj(), gepNode->getConstantFieldIdx() + apOffset);
+    else if (BaseObjVar* baseNode = SVFUtil::dyn_cast<BaseObjVar>(node))
+        return getGepObjVar(baseNode, apOffset);
     else if (DummyObjVar* baseNode = SVFUtil::dyn_cast<DummyObjVar>(node))
-        return getGepObjVar(baseNode->getMemObj(), ls);
+        return getGepObjVar(baseNode, apOffset);
     else
     {
         assert(false && "new gep obj node kind?");
@@ -419,22 +436,25 @@ NodeID SVFIR::getGepObjVar(NodeID id, const LocationSet& ls)
  * offset = offset % obj->getMaxFieldOffsetLimit() to create limited number of mem objects
  * maximum number of field object creation is obj->getMaxFieldOffsetLimit()
  */
-NodeID SVFIR::getGepObjVar(const MemObj* obj, const LocationSet& ls)
+NodeID SVFIR::getGepObjVar(const BaseObjVar* baseObj, const APOffset& apOffset)
 {
-    NodeID base = obj->getId();
+    NodeID base = baseObj->getId();
 
     /// if this obj is field-insensitive, just return the field-insensitive node.
-    if (obj->isFieldInsensitive())
-        return getFIObjVar(obj);
+    if (baseObj->isFieldInsensitive())
+        return getFIObjVar(baseObj);
 
-    LocationSet newLS = pag->getSymbolInfo()->getModulusOffset(obj,ls);
+    APOffset newLS = pag->getModulusOffset(baseObj, apOffset);
 
     // Base and first field are the same memory location.
-    if (Options::FirstFieldEqBase() && newLS.accumulateConstantFieldIdx() == 0) return base;
+    if (Options::FirstFieldEqBase() && newLS == 0) return base;
 
-    NodeLocationSetMap::iterator iter = GepObjVarMap.find(std::make_pair(base, newLS));
+    NodeOffsetMap::iterator iter = GepObjVarMap.find(std::make_pair(base, newLS));
     if (iter == GepObjVarMap.end())
-        return addGepObjNode(obj, newLS);
+    {
+        NodeID gepId = NodeIDAllocator::get()->allocateGepObjectId(base, apOffset, Options::MaxFieldLimit());
+        return addGepObjNode(baseObj, newLS, gepId);
+    }
     else
         return iter->second;
 
@@ -443,36 +463,24 @@ NodeID SVFIR::getGepObjVar(const MemObj* obj, const LocationSet& ls)
 /*!
  * Add a field obj node, this method can only invoked by getGepObjVar
  */
-NodeID SVFIR::addGepObjNode(const MemObj* obj, const LocationSet& ls)
+NodeID SVFIR::addGepObjNode(const BaseObjVar* baseObj, const APOffset& apOffset, const NodeID gepId)
 {
     //assert(findPAGNode(i) == false && "this node should not be created before");
-    NodeID base = obj->getId();
-    assert(0==GepObjVarMap.count(std::make_pair(base, ls))
+    NodeID base = baseObj->getId();
+    assert(0==GepObjVarMap.count(std::make_pair(base, apOffset))
            && "this node should not be created before");
 
-    NodeID gepId = NodeIDAllocator::get()->allocateGepObjectId(base, ls.accumulateConstantFieldIdx(), Options::MaxFieldLimit());
-    GepObjVarMap[std::make_pair(base, ls)] = gepId;
-    GepObjVar *node = new GepObjVar(obj, gepId, ls);
+    GepObjVarMap[std::make_pair(base, apOffset)] = gepId;
+    //ABTest
+    GepObjVar *node = new GepObjVar(baseObj, gepId, apOffset);
     memToFieldsMap[base].set(gepId);
-    return addObjNode(obj->getValue(), node, gepId);
-}
-
-/*!
- * Add a field-insensitive node, this method can only invoked by getFIGepObjNode
- */
-NodeID SVFIR::addFIObjNode(const MemObj* obj)
-{
-    //assert(findPAGNode(i) == false && "this node should not be created before");
-    NodeID base = obj->getId();
-    memToFieldsMap[base].set(obj->getId());
-    FIObjVar *node = new FIObjVar(obj->getValue(), obj->getId(), obj);
-    return addObjNode(obj->getValue(), node, obj->getId());
+    return addObjNode(node);
 }
 
 /*!
  * Get all fields object nodes of an object
  */
-NodeBS& SVFIR::getAllFieldsObjVars(const MemObj* obj)
+NodeBS& SVFIR::getAllFieldsObjVars(const BaseObjVar* obj)
 {
     NodeID base = obj->getId();
     return memToFieldsMap[base];
@@ -485,8 +493,7 @@ NodeBS& SVFIR::getAllFieldsObjVars(NodeID id)
 {
     const SVFVar* node = pag->getGNode(id);
     assert(SVFUtil::isa<ObjVar>(node) && "need an object node");
-    const ObjVar* obj = SVFUtil::cast<ObjVar>(node);
-    return getAllFieldsObjVars(obj->getMemObj());
+    return getAllFieldsObjVars(getBaseObject(id));
 }
 
 /*!
@@ -498,44 +505,21 @@ NodeBS SVFIR::getFieldsAfterCollapse(NodeID id)
 {
     const SVFVar* node = pag->getGNode(id);
     assert(SVFUtil::isa<ObjVar>(node) && "need an object node");
-    const MemObj* mem = SVFUtil::cast<ObjVar>(node)->getMemObj();
-    if(mem->isFieldInsensitive())
+    const BaseObjVar* obj = getBaseObject(id);
+    if(obj->isFieldInsensitive())
     {
         NodeBS bs;
-        bs.set(getFIObjVar(mem));
+        bs.set(getFIObjVar(obj));
         return bs;
     }
     else
-        return getAllFieldsObjVars(mem);
+        return getAllFieldsObjVars(obj);
 }
 
 /*!
- * Get a base pointer given a pointer
- * Return the source node of its connected gep edge if this pointer has
- * Otherwise return the node id itself
+ * It is used to create a dummy GepValVar during global initialization.
  */
-NodeID SVFIR::getBaseValVar(NodeID nodeId)
-{
-    SVFVar* node  = getGNode(nodeId);
-    if (node->hasIncomingEdges(SVFStmt::Gep))
-    {
-        SVFStmt::SVFStmtSetTy& geps = node->getIncomingEdges(SVFStmt::Gep);
-
-        assert((geps.size()==1) && "one node can only be connected by at most one gep edge!");
-
-        SVFVar::iterator it = geps.begin();
-
-        assert(SVFUtil::isa<GepStmt>(*it) && "not a gep edge??");
-        return (*it)->getSrcID();
-    }
-    else
-        return nodeId;
-}
-
-/*!
- * It is used to create a dummy GepValVar during global initiailzation.
- */
-NodeID SVFIR::getGepValVar(const SVFValue* curInst, NodeID base, const LocationSet& ls) const
+NodeID SVFIR::getGepValVar(NodeID curInst, NodeID base, const AccessPath& ap) const
 {
     GepValueVarMap::const_iterator iter = GepValObjMap.find(curInst);
     if(iter==GepValObjMap.end())
@@ -544,8 +528,9 @@ NodeID SVFIR::getGepValVar(const SVFValue* curInst, NodeID base, const LocationS
     }
     else
     {
-        NodeLocationSetMap::const_iterator lit = iter->second.find(std::make_pair(base, ls));
-        if(lit==iter->second.end())
+        NodeAccessPathMap::const_iterator lit =
+            iter->second.find(std::make_pair(base, ap));
+        if (lit == iter->second.end())
             return UINT_MAX;
         else
             return lit->second;
@@ -562,6 +547,8 @@ void SVFIR::destroy()
     icfg = nullptr;
     delete chgraph;
     chgraph = nullptr;
+    delete callGraph;
+    callGraph = nullptr;
 }
 
 /*!
@@ -628,7 +615,7 @@ void SVFIR::print()
             outs() << (*iter)->getSrcID() << " -- VariantGep --> "
                    << (*iter)->getDstID() << "\n";
         else
-            outs() << gep->getRHSVarID() << " -- Gep (" << gep->getConstantFieldIdx()
+            outs() << gep->getRHSVarID() << " -- Gep (" << gep->getConstantStructFldIdx()
                    << ") --> " << gep->getLHSVarID() << "\n";
     }
 
@@ -664,47 +651,19 @@ void SVFIR::initialiseCandidatePointers()
         candidatePointers.insert(nodeId);
     }
 }
-/*!
- * Return true if FIObjVar can point to any object
- * Or a field GepObjVar can point to any object.
- */
-bool SVFIR::isNonPointerObj(NodeID id) const
-{
-    SVFVar* node = getGNode(id);
-    if (const FIObjVar* fiNode = SVFUtil::dyn_cast<FIObjVar>(node))
-    {
-        return (fiNode->getMemObj()->hasPtrObj()==false);
-    }
-    else if (const GepObjVar* gepNode = SVFUtil::dyn_cast<GepObjVar>(node))
-    {
-        return (gepNode->getMemObj()->isNonPtrFieldObj(gepNode->getLocationSet()));
-    }
-    else if (const DummyObjVar* dummyNode = SVFUtil::dyn_cast<DummyObjVar>(node))
-    {
-        return (dummyNode->getMemObj()->hasPtrObj()==false);
-    }
-    else
-    {
-        assert(false && "expecting a object node");
-        abort();
-    }
-}
 /*
- * If this is a dummy node or node does not have incoming edges and outcoming edges we assume it is not a pointer here.
+ * If this is a dummy node or node does not have incoming edges and outgoing edges we assume it is not a pointer here.
  * However, if it is a pointer and it is an argument of a function definition, we assume it is a pointer here.
  */
 bool SVFIR::isValidPointer(NodeID nodeId) const
 {
     SVFVar* node = pag->getGNode(nodeId);
 
-    if (node->hasValue() && node->isPointer())
-    {
-        if(const SVFArgument* arg = SVFUtil::dyn_cast<SVFArgument>(node->getValue()))
-        {
-            if (!(arg->getParent()->isDeclaration()))
-                return true;
-        }
-    }
+    if(node->isPointer())
+        if (const ValVar* pVar = pag->getBaseValVar(nodeId))
+            if (const ArgValVar* arg = SVFUtil::dyn_cast<ArgValVar>(pVar))
+                if (!(arg->getParent()->isDeclaration()))
+                    return true;
 
     if ((node->getInEdges().empty() && node->getOutEdges().empty()))
         return false;
@@ -715,9 +674,11 @@ bool SVFIR::isValidTopLevelPtr(const SVFVar* node)
 {
     if (SVFUtil::isa<ValVar>(node))
     {
-        if (isValidPointer(node->getId()) && node->hasValue())
+        if (isValidPointer(node->getId()))
         {
-            return !SVFUtil::isArgOfUncalledFunction(node->getValue());
+            const ValVar* baseVar = pag->getBaseValVar(node->getId());
+            if(!SVFUtil::isa<DummyValVar, BlackHoleValVar>(baseVar))
+                return !SVFUtil::isArgOfUncalledFunction(baseVar);
         }
     }
     return false;

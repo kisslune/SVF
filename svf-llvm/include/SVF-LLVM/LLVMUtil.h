@@ -32,9 +32,6 @@
 
 #include "Util/SVFUtil.h"
 #include "SVF-LLVM/BasicTypes.h"
-#include "SVF-LLVM/LLVMModule.h"
-#include "SVFIR/SVFValue.h"
-#include "Util/ExtAPI.h"
 #include "Util/ThreadAPI.h"
 
 namespace SVF
@@ -54,15 +51,40 @@ inline bool isCallSite(const Value* val)
     return SVFUtil::isa<CallBase>(val);
 }
 
-/// Get the definition of a function across multiple modules
-inline const Function* getDefFunForMultipleModule(const Function* fun)
+inline double getDoubleValue(const ConstantFP* fpValue)
 {
-    if (fun == nullptr)
-        return nullptr;
-    LLVMModuleSet* llvmModuleset = LLVMModuleSet::getLLVMModuleSet();
-    if (fun->isDeclaration() && llvmModuleset->hasDefinition(fun))
-        fun = LLVMModuleSet::getLLVMModuleSet()->getDefinition(fun);
-    return fun;
+    double dval = 0;
+    if (fpValue->isNormalFP())
+    {
+        const llvm::fltSemantics& semantics = fpValue->getValueAPF().getSemantics();
+        if (&semantics == &llvm::APFloat::IEEEhalf() ||
+                &semantics == &llvm::APFloat::IEEEsingle() ||
+                &semantics == &llvm::APFloat::IEEEdouble() ||
+                &semantics == &llvm::APFloat::IEEEquad() ||
+                &semantics == &llvm::APFloat::x87DoubleExtended())
+        {
+            dval = fpValue->getValueAPF().convertToDouble();
+        }
+        else
+        {
+            assert (false && "Unsupported floating point type");
+            abort();
+        }
+    }
+    else
+    {
+        // other cfp type, like isZero(), isInfinity(), isNegative(), etc.
+        // do nothing
+    }
+    return dval;
+}
+
+inline std::pair<s64_t, u64_t> getIntegerValue(const ConstantInt* intValue)
+{
+    if (intValue->getBitWidth() <= 64 && intValue->getBitWidth() >= 1)
+        return std::make_pair(intValue->getSExtValue(), intValue->getZExtValue());
+    else
+        return std::make_pair(0,0);
 }
 
 /// Return LLVM callsite given a value
@@ -75,8 +97,7 @@ inline const CallBase* getLLVMCallSite(const Value* value)
 inline const Function* getCallee(const CallBase* cs)
 {
     // FIXME: do we need to strip-off the casts here to discover more library functions
-    const Function* callee = SVFUtil::dyn_cast<Function>(cs->getCalledOperand()->stripPointerCasts());
-    return callee ? getDefFunForMultipleModule(callee) : nullptr;
+    return SVFUtil::dyn_cast<Function>(cs->getCalledOperand()->stripPointerCasts());
 }
 
 /// Return LLVM function if this value is
@@ -86,18 +107,7 @@ inline const Function* getLLVMFunction(const Value* val)
 }
 
 /// Get program entry function from module.
-inline const Function* getProgFunction(const std::string& funName)
-{
-    for (const Module& M : LLVMModuleSet::getLLVMModuleSet()->getLLVMModules())
-    {
-        for (const Function& fun : M)
-        {
-            if (fun.getName() == funName)
-                return &fun;
-        }
-    }
-    return nullptr;
-}
+const Function* getProgFunction(const std::string& funName);
 
 /// Check whether a function is an entry function (i.e., main)
 inline bool isProgEntryFunction(const Function* fun)
@@ -120,45 +130,18 @@ inline bool isNullPtrSym(const Value* val)
 static inline Type* getPtrElementType(const PointerType* pty)
 {
 #if (LLVM_VERSION_MAJOR < 14)
-    return pty->getElementType();
-#else
+    return pty->getPointerElementType();
+#elif (LLVM_VERSION_MAJOR < 17)
     assert(!pty->isOpaque() && "Opaque Pointer is used, please recompile the source adding '-Xclang -no-opaque-pointers'");
     return pty->getNonOpaquePointerElementType();
+#else
+    assert(false && "llvm version 17+ only support opaque pointers!");
 #endif
 }
 
-/// Get the reference type of heap/static object from an allocation site.
-//@{
-inline const PointerType *getRefTypeOfHeapAllocOrStatic(const CallBase* cs)
-{
-    const PointerType *refType = nullptr;
-    const SVFInstruction* svfcall = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(cs);
-    CallSite svfcs = SVFUtil::getSVFCallSite(svfcall);
-    // Case 1: heap object held by *argument, we should get its element type.
-    if (SVFUtil::isHeapAllocExtCallViaArg(svfcs))
-    {
-        int argPos = SVFUtil::getHeapAllocHoldingArgPosition(svfcs);
-        const Value* arg = cs->getArgOperand(argPos);
-        if (const PointerType *argType = SVFUtil::dyn_cast<PointerType>(arg->getType()))
-            refType = SVFUtil::dyn_cast<PointerType>(getPtrElementType(argType));
-    }
-    // Case 2: heap/static object held by return value.
-    else
-    {
-        assert((SVFUtil::isStaticExtCall(svfcs) || SVFUtil::isHeapAllocExtCallViaRet(svfcs))
-               && "Must be heap alloc via ret, or static allocation site");
-        refType = SVFUtil::dyn_cast<PointerType>(cs->getType());
-    }
-    assert(refType && "Allocated object must be held by a pointer-typed value.");
-    return refType;
-}
+/// Return size of this object based on LLVM value
+u32_t getNumOfElements(const Type* ety);
 
-inline const PointerType *getRefTypeOfHeapAllocOrStatic(const Instruction* inst)
-{
-    const CallBase* cs = getLLVMCallSite(inst);
-    return getRefTypeOfHeapAllocOrStatic(cs);
-}
-//@}
 
 /// Return true if this value refers to a object
 bool isObject(const Value* ref);
@@ -206,6 +189,9 @@ inline bool isArgOfUncalledFunction (const Value*  val)
 }
 //@}
 
+/// Return true if the function has a return instruction
+bool basicBlockHasRetInst(const BasicBlock* bb);
+
 /// Return true if the function has a return instruction reachable from function
 /// entry
 bool functionDoesNotRet(const Function* fun);
@@ -220,12 +206,9 @@ const Value* stripConstantCasts(const Value* val);
 /// Strip off the all casts
 const Value* stripAllCasts(const Value* val);
 
-/// Get the type of the heap allocation
-const Type* getTypeOfHeapAlloc(const Instruction* inst);
-
-/// Return the bitcast instruction which is val's only use site, otherwise
+/// Return the bitcast instruction right next to val, otherwise
 /// return nullptr
-const Value* getUniqueUseViaCastInst(const Value* val);
+const Value* getFirstUseViaCastInst(const Value* val);
 
 /// Return corresponding constant expression, otherwise return nullptr
 //@{
@@ -337,22 +320,19 @@ inline static DataLayout* getDataLayout(Module* mod)
 
 /// Get the next instructions following control flow
 void getNextInsts(const Instruction* curInst,
-                  std::vector<const SVFInstruction*>& instList);
-
-/// Get the previous instructions following control flow
-void getPrevInsts(const Instruction* curInst,
-                  std::vector<const SVFInstruction*>& instList);
-
-/// Get the next instructions following control flow
-void getNextInsts(const Instruction* curInst,
                   std::vector<const Instruction*>& instList);
 
-/// Get the previous instructions following control flow
-void getPrevInsts(const Instruction* curInst,
-                  std::vector<const Instruction*>& instList);
 
-/// Get num of BB's predecessors
-u32_t getBBPredecessorNum(const BasicBlock* BB);
+/// Basic block does not have predecessors
+/// map-1.cpp.bc
+/// try.cont: ; No predecessors!
+///    call void @llvm.trap()
+///    unreachable
+inline bool isNoPrecessorBasicBlock(const BasicBlock* bb)
+{
+    return bb != &bb->getParent()->getEntryBlock() &&
+           pred_empty(bb);
+}
 
 /// Check whether a file is an LLVM IR file
 bool isIRFile(const std::string& filename);
@@ -361,10 +341,6 @@ bool isIRFile(const std::string& filename);
 void processArguments(int argc, char** argv, int& arg_num, char** arg_value,
                       std::vector<std::string>& moduleNameVec);
 
-/// Helper method to get the size of the type from target data layout
-//@{
-u32_t getTypeSizeInBytes(const Type* type);
-u32_t getTypeSizeInBytes(const StructType* sty, u32_t field_index);
 //@}
 
 const std::string getSourceLoc(const Value* val);
@@ -373,11 +349,20 @@ const std::string getSourceLocOfFunction(const Function* F);
 bool isIntrinsicInst(const Instruction* inst);
 bool isIntrinsicFun(const Function* func);
 
-/// Get the corresponding Function based on its name
-inline const SVFFunction* getFunction(const std::string& name)
-{
-    return LLVMModuleSet::getLLVMModuleSet()->getSVFFunction(name);
-}
+/// Get all called funcions in a parent function
+std::vector<const Function *> getCalledFunctions(const Function *F);
+// Converts a mangled name to C naming style to match functions in extapi.c.
+std::string restoreFuncName(std::string funcName);
+
+bool isExtCall(const Function* fun);
+
+bool isMemcpyExtFun(const Function *fun);
+
+bool isMemsetExtFun(const Function* fun);
+
+u32_t getHeapAllocHoldingArgPosition(const Function* fun);
+
+const FunObjVar* getFunObjVar(const std::string&name);
 
 /// Return true if the value refers to constant data, e.g., i32 0
 inline bool isConstDataOrAggData(const Value* val)
@@ -387,18 +372,7 @@ inline bool isConstDataOrAggData(const Value* val)
 }
 
 /// find the unique defined global across multiple modules
-inline const Value* getGlobalRep(const Value* val)
-{
-    if (const GlobalVariable* gvar = SVFUtil::dyn_cast<GlobalVariable>(val))
-    {
-        if (LLVMModuleSet::getLLVMModuleSet()->hasGlobalRep(gvar))
-            val = LLVMModuleSet::getLLVMModuleSet()->getGlobalRep(gvar);
-    }
-    return val;
-}
-
-/// Check whether this value points-to a constant object
-bool isConstantObjSym(const SVFValue* val);
+const Value* getGlobalRep(const Value* val);
 
 /// Check whether this value points-to a constant object
 bool isConstantObjSym(const Value* val);
@@ -409,55 +383,48 @@ void viewCFG(const Function* fun);
 // Dump Control Flow Graph of llvm function, without instructions
 void viewCFGOnly(const Function* fun);
 
-bool isValVtbl(const Value* val);
-bool isLoadVtblInst(const LoadInst* loadInst);
-bool isVirtualCallSite(const CallBase* cs);
-bool isConstructor(const Function* F);
-bool isDestructor(const Function* F);
-bool isCPPThunkFunction(const Function* F);
-const Function* getThunkTarget(const Function* F);
+std::string dumpValue(const Value* val);
 
-/*
- * VtableA = {&A::foo}
- * A::A(this){
- *   *this = &VtableA;
- * }
- *
- *
- * A* p = new A;
- * cs: p->foo(...)
- * ==>
- *  vtptr = *p;
- *  vfn = &vtptr[i]
- *  %funp = *vfn
- *  call %funp(p,...)
- * getConstructorThisPtr(A) return "this" pointer
- * getVCallThisPtr(cs) return p (this pointer)
- * getVCallVtblPtr(cs) return vtptr
- * getVCallIdx(cs) return i
- * getClassNameFromVtblObj(VtableA) return
- * getClassNameFromType(type of p) return type A
- */
-const Argument* getConstructorThisPtr(const Function* fun);
-const Value* getVCallThisPtr(const CallBase* cs);
-const Value* getVCallVtblPtr(const CallBase* cs);
-s32_t getVCallIdx(const CallBase* cs);
-std::string getClassNameFromType(const Type* ty);
-std::string getClassNameOfThisPtr(const CallBase* cs);
-std::string getFunNameOfVCallSite(const CallBase* cs);
-bool VCallInCtorOrDtor(const CallBase* cs);
+std::string dumpType(const Type* type);
 
-/*
- *  A(A* this){
- *      store this this.addr;
- *      tmp = load this.addr;
- *      this1 = bitcast(tmp);
- *      B(this1);
- *  }
- *  this and this1 are the same thisPtr in the constructor
- */
-bool isSameThisPtrInConstructor(const Argument* thisPtr1,
-                                const Value* thisPtr2);
+std::string dumpValueAndDbgInfo(const Value* val);
+
+bool isHeapAllocExtCallViaRet(const Instruction *inst);
+
+bool isHeapAllocExtCallViaArg(const Instruction *inst);
+
+inline bool isHeapAllocExtCall(const Instruction *inst)
+{
+    return isHeapAllocExtCallViaRet(inst) || isHeapAllocExtCallViaArg(inst);
+}
+
+bool isStackAllocExtCallViaRet(const Instruction *inst);
+
+inline bool isStackAllocExtCall(const Instruction *inst)
+{
+    return isStackAllocExtCallViaRet(inst);
+}
+
+// Check if a given value represents a heap object.
+bool isHeapObj(const Value* val);
+
+// Check if a given value represents a stack object.
+bool isStackObj(const Value* val);
+
+/// Whether an instruction is a callsite in the application code, excluding llvm intrinsic calls
+bool isNonInstricCallSite(const Instruction* inst);
+
+/// Get program entry function from module.
+inline const Function* getProgEntryFunction(Module& module)
+{
+    for (auto it = module.begin(), eit = module.end(); it != eit; ++it)
+    {
+        const Function *fun = &(*it);
+        if (isProgEntryFunction(fun))
+            return (fun);
+    }
+    return nullptr;
+}
 
 } // End namespace LLVMUtil
 

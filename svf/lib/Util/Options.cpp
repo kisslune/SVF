@@ -2,6 +2,11 @@
 
 #include "Util/Options.h"
 #include "Util/CommandLine.h"
+#include "FastCluster/fastcluster.h"
+#include "Util/ExtAPI.h"
+#include "MSSA/MemSSA.h"
+#include "WPA/WPAPass.h"
+#include "AE/Svfexe/AbstractInterpretation.h"
 
 namespace SVF
 {
@@ -72,62 +77,6 @@ const Option<u32_t> Options::CxtBudget(
     "cxt-bg",
     "Maximum step budget of context-sensitive traversing",
     10000
-);
-
-
-// DDAClient.cpp
-const Option<bool> Options::SingleLoad(
-    "single-load",
-    "Count load pointer with same source operand as one query",
-    true
-);
-
-const Option<bool> Options::DumpFree(
-    "dump-free",
-    "Dump use after free locations",
-    false
-);
-
-const Option<bool> Options::DumpUninitVar(
-    "dump-uninit-var",
-    "Dump uninitialised variables",
-    false
-);
-
-const Option<bool> Options::DumpUninitPtr(
-    "dump-uninit-ptr",
-    "Dump uninitialised pointers",
-    false
-);
-
-const Option<bool> Options::DumpSUPts(
-    "dump-su-pts",
-    "Dump strong updates store",
-    false
-);
-
-const Option<bool> Options::DumpSUStore(
-    "dump-su-store",
-    "Dump strong updates store",
-    false
-);
-
-const Option<bool> Options::MallocOnly(
-    "malloc-only",
-    "Only add tainted objects for malloc",
-    true
-);
-
-const Option<bool> Options::TaintUninitHeap(
-    "uninit-heap",
-    "detect uninitialized heap variables",
-    true
-);
-
-const Option<bool> Options::TaintUninitStack(
-    "uninit-stack",
-    "detect uninitialized stack variables",
-    true
 );
 
 // DDAPass.cpp
@@ -214,7 +163,7 @@ const Option<bool> Options::OCGDotGraph(
 // Program Assignment Graph for pointer analysis (SVFIR.cpp)
 Option<bool> Options::HandBlackHole(
     "blk",
-    "Hanle blackhole edge",
+    "Handle blackhole edge",
     false
 );
 
@@ -253,14 +202,6 @@ const Option<bool> Options::DumpVFG(
 );
 
 
-// Location set for modeling abstract memory object (LocationSet.cpp)
-const Option<bool> Options::SingleStride(
-    "stride-only",
-    "Only use single stride in LocMemoryModel",
-    false
-);
-
-
 // Base class of pointer analyses (PointerAnalysis.cpp)
 const Option<bool> Options::TypePrint(
     "print-type",
@@ -277,6 +218,12 @@ const Option<bool> Options::FuncPointerPrint(
 const Option<bool> Options::PTSPrint(
     "print-pts",
     "Print points-to set of top-level pointers",
+    false
+);
+
+const Option<bool> Options::PrintFieldWithBasePrefix(
+    "print-field",
+    "Print field object with base object id as the prefix",
     false
 );
 
@@ -316,6 +263,18 @@ const Option<bool> Options::DumpICFG(
     false
 );
 
+const Option<std::string> Options::DumpJson(
+    "dump-json",
+    "Dump the SVFIR in JSON format",
+    ""
+);
+
+const Option<bool> Options::ReadJson(
+    "read-json",
+    "Read the SVFIR in JSON format",
+    false
+);
+
 const Option<bool> Options::CallGraphDotGraph(
     "dump-callgraph",
     "Dump dot graph of Call Graph",
@@ -334,7 +293,7 @@ const Option<u32_t> Options::IndirectCallLimit(
     50000
 );
 
-const Option<bool> Options::UsePreCompFieldSensitive(
+Option<bool> Options::UsePreCompFieldSensitive(
     "pre-field-sensitive",
     "Use pre-computed field-sensitivity for later analysis",
     true
@@ -343,6 +302,12 @@ const Option<bool> Options::UsePreCompFieldSensitive(
 const Option<bool> Options::EnableAliasCheck(
     "alias-check",
     "Enable alias check functions",
+    true
+);
+
+const Option<bool> Options::EnableTypeCheck(
+    "type-check",
+    "Enable type check functions",
     true
 );
 
@@ -395,7 +360,7 @@ const OptionMap<PointsTo::Type> Options::PtType(
 }
 );
 
-const OptionMap<enum hclust_fast_methods> Options::ClusterMethod(
+const OptionMap<u32_t> Options::ClusterMethod(
     "cluster-method",
     "hierarchical clustering method for objects",
     HCLUST_METHOD_SVF_BEST,
@@ -447,14 +412,14 @@ const Option<std::string> Options::MSSAFun(
     ""
 );
 
-const OptionMap<MemSSA::MemPartition> Options::MemPar(
+const OptionMap<u32_t> Options::MemPar(
     "mem-par",
-    "Memory region partiion strategies (e.g., for SVFG construction)",
+    "Memory region partition strategies (e.g., for SVFG construction)",
     MemSSA::MemPartition::IntraDisjoint,
 {
     {MemSSA::MemPartition::Distinct, "distinct", "memory region per each object"},
-    {MemSSA::MemPartition::IntraDisjoint, "intra-disjoint", "memory regions partioned based on each function"},
-    {MemSSA::MemPartition::InterDisjoint, "inter-disjoint", "memory regions partioned across functions"},
+    {MemSSA::MemPartition::IntraDisjoint, "intra-disjoint", "memory regions partitioned based on each function"},
+    {MemSSA::MemPartition::InterDisjoint, "inter-disjoint", "memory regions partitioned across functions"},
 }
 );
 
@@ -484,29 +449,11 @@ const Option<std::string> Options::ReadSVFG(
     ""
 );
 
-// FSMPTA.cpp
-const Option<bool> Options::UsePCG(
-    "pcg-td-edge",
-    "Use PCG lock for non-sparsely adding SVFG edges",
-    false
-);
 
 const Option<bool> Options::IntraLock(
     "intra-lock-td-edge",
-    "Use simple intra-procedual lock for adding SVFG edges",
+    "Use simple intra-procedural lock for adding SVFG edges",
     true
-);
-
-const Option<bool> Options::ReadPrecisionTDEdge(
-    "rp-td-edge",
-    "perform read precision to refine SVFG edges",
-    false
-);
-
-const Option<u32_t> Options::AddModelFlag(
-    "add-td-edge",
-    "Add thread SVFG edges with models: 0 Non Add Edge; 1 NonSparse; 2 All Optimisation; 3 No MHP; 4 No Alias; 5 No Lock; 6 No Read Precision.",
-    0
 );
 
 
@@ -532,56 +479,12 @@ const Option<bool> Options::DoLockAnalysis(
 );
 
 
-// MTA.cpp
-const Option<bool> Options::AndersenAnno(
-    "tsan-ander",
-    "Add TSan annotation according to Andersen",
-    false
-);
-
-const Option<bool> Options::FSAnno(
-    "tsan-fs",
-    "Add TSan annotation according to flow-sensitive analysis",
-    false
-);
-
-
-// MTAAnnotator.cpp
-const Option<u32_t> Options::AnnoFlag(
-    "anno",
-    "prune annotated instructions: 0001 Thread Local; 0002 Alias; 0004 MHP.",
-    0
-);
-
-
-// MTAResultValidator.cpp
-const Option<bool> Options::PrintValidRes(
-    "mhp-validation",
-    "Print MHP Validation Results",
-    false
-);
-// LockResultValidator.cpp
-const Option<bool> Options::LockValid(
-    "lock-validation",
-    "Print Lock Validation Results",
-    false
-);
-
-
 // MTAStat.cpp
 const Option<bool> Options::AllPairMHP(
     "all-pair-mhp",
     "All pair MHP computation",
     false
 );
-
-
-// PCG.cpp
-//const Option<bool> TDPrint(
-//    "print-td",
-//    "Print Thread Analysis Results",
-//    true
-//);
 
 
 // TCT.cpp
@@ -643,13 +546,13 @@ const Option<bool> Options::SVFMain(
     false
 );
 
-const Option<bool> Options::ModelConsts(
+Option<bool> Options::ModelConsts(
     "model-consts",
     "Modeling individual constant objects",
     false
 );
 
-const Option<bool> Options::ModelArrays(
+Option<bool> Options::ModelArrays(
     "model-arrays",
     "Modeling Gep offsets for array accesses",
     false
@@ -667,14 +570,20 @@ const Option<bool> Options::SymTabPrint(
     false
 );
 
-
-
 // Conditions.cpp
 const Option<u32_t> Options::MaxZ3Size(
     "max-z3-size",
     "Maximum size limit for Z3 expression",
     30
 );
+
+// BoundedZ3Expr.cpp
+const Option<u32_t> Options::MaxBVLen(
+    "max-bv-len",
+    "Maximum length limit for Z3 bitvector",
+    64
+);
+
 
 
 // SaberCondAllocator.cpp
@@ -751,8 +660,13 @@ const Option<bool> Options::VtableInSVFIR(
     false
 );
 
-
 //WPAPass.cpp
+const Option<std::string> Options::ExtAPIPath(
+    "extapi",
+    "External API extapi.bc",
+    ""
+);
+
 const Option<bool> Options::AnderSVFG(
     "svfg",
     "Generate SVFG after Andersen's Analysis",
@@ -776,7 +690,7 @@ OptionMultiple<PointerAnalysis::PTATY> Options::PASelected(
 {
     {PointerAnalysis::Andersen_WPA, "nander", "Standard inclusion-based analysis"},
     {PointerAnalysis::AndersenSCD_WPA, "sander", "Selective cycle detection inclusion-based analysis"},
-    {PointerAnalysis::AndersenSFR_WPA, "sfrander", "Stride-based field representation includion-based analysis"},
+    {PointerAnalysis::AndersenSFR_WPA, "sfrander", "Stride-based field representation inclusion-based analysis"},
     {PointerAnalysis::AndersenWaveDiff_WPA, "ander", "Diff wave propagation inclusion-based analysis"},
     {PointerAnalysis::Steensgaard_WPA, "steens", "Steensgaard's pointer analysis"},
     // Disabled till further work is done.
@@ -787,7 +701,7 @@ OptionMultiple<PointerAnalysis::PTATY> Options::PASelected(
 );
 
 
-OptionMultiple<WPAPass::AliasCheckRule> Options::AliasRule(
+OptionMultiple<u32_t> Options::AliasRule(
     "Select alias check rule",
 {
     {WPAPass::Conservative, "conservative", "return MayAlias if any pta says alias"},
@@ -845,7 +759,13 @@ const Option<bool> Options::POCRAlias(
 
 const Option<bool> Options::POCRHybrid(
     "pocr-hybrid",
-    "When explicit to true, POCRHybridSolver transfer CFL graph to internal hybird graph representation.",
+    "When explicit to true, POCRHybridSolver transfer CFL graph to internal hybrid graph representation.",
+    false
+);
+
+const Option<bool> Options::Customized(
+    "customized",
+    "When explicit to true, user can use any grammar file.",
     false
 );
 
@@ -861,10 +781,61 @@ const Option<u32_t> Options::LoopBound(
     1
 );
 
+const Option<u32_t> Options::WidenDelay(
+    "widen-delay", "Loop Widen Delay", 3);
+const OptionMap<u32_t> Options::HandleRecur(
+    "handle-recur",
+    "Recursion handling mode in abstract execution (Default -widen-narrow)",
+    AbstractInterpretation::HandleRecur::WIDEN_NARROW,
+{
+    {
+        AbstractInterpretation::HandleRecur::TOP, "top",
+        "The return value, and any stored object pointed by q at *q = p in recursive functions will be set to the top value."
+    },
+    {
+        AbstractInterpretation::HandleRecur::WIDEN_ONLY, "widen-only",
+        "Only apply widening at the cycle head of recursive functions."
+    },
+    {
+        AbstractInterpretation::HandleRecur::WIDEN_NARROW, "widen-narrow",
+        "Apply both widening and narrowing at the cycle head of recursive functions."
+    }
+}
+);
+const Option<u32_t> Options::Timeout(
+    "timeout", "time out (seconds), set -1 (no timeout), default 14400s",14400);
+const Option<std::string> Options::OutputName(
+    "output","output db file","output.db");
+const Option<bool> Options::BufferOverflowCheck(
+    "overflow","Buffer Overflow Detection",false);
+const Option<bool> Options::NullDerefCheck(
+    "null-deref","Null Pointer Dereference Detection",false);
+const Option<bool> Options::MemoryLeakCheck(
+    "leak", "Memory Leak Detection",false);
+const Option<bool> Options::FileCheck(
+    "fileck", "File Open/Close Detection",false);
+const Option<bool> Options::DFreeCheck(
+    "dfree", "Double Free Detection",false);
+const Option<bool> Options::RaceCheck(
+    "race", "Data race Detection",false);
+const Option<bool> Options::GepUnknownIdx(
+    "gep-unknown-idx","Skip Gep Unknown Index",false);
+const Option<bool> Options::RunUncallFuncs(
+    "run-uncall-fun","Skip Gep Unknown Index",false);
+const Option<bool> Options::ICFGMergeAdjacentNodes(
+    "icfg-merge-adjnodes","ICFG Simplification - Merge Adjacent Nodes in the Same Basic Block.",false);
+
+
+const Option<u32_t> Options::AEPrecision(
+    "precision",
+    "symbolic abstraction precision for float",
+    0
+);
+
 const Option<std::string> Options::writeGraph(
-    "write-graph",
-    "Write graph",
-    ""
+        "write-graph",
+        "Write graph",
+        ""
 );
 
 } // namespace SVF.

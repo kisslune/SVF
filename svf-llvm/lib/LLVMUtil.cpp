@@ -28,21 +28,26 @@
  */
 
 #include "SVF-LLVM/LLVMUtil.h"
-#include "SVFIR/SymbolTableInfo.h"
+#include "SVFIR/ObjTypeInfo.h"
 #include <sstream>
 #include <llvm/Support/raw_ostream.h>
+#include "SVF-LLVM/LLVMModule.h"
+
 
 using namespace SVF;
 
-// label for global vtbl value before demangle
-const std::string vtblLabelBeforeDemangle = "_ZTV";
-
-// label for virtual functions
-const std::string vfunPreLabel = "_Z";
-
-const std::string clsName = "class.";
-const std::string structName = "struct.";
-
+const Function* LLVMUtil::getProgFunction(const std::string& funName)
+{
+    for (const Module& M : LLVMModuleSet::getLLVMModuleSet()->getLLVMModules())
+    {
+        for (const Function& fun : M)
+        {
+            if (fun.getName() == funName)
+                return &fun;
+        }
+    }
+    return nullptr;
+}
 
 /*!
  * A value represents an object if it is
@@ -53,17 +58,14 @@ const std::string structName = "struct.";
  */
 bool LLVMUtil::isObject(const Value*  ref)
 {
-    bool createobj = false;
-    if (SVFUtil::isa<Instruction>(ref) && SVFUtil::isStaticExtCall(LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(SVFUtil::cast<Instruction>(ref))) )
-        createobj = true;
-    if (SVFUtil::isa<Instruction>(ref) && SVFUtil::isHeapAllocExtCallViaRet(LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(SVFUtil::cast<Instruction>(ref))))
-        createobj = true;
+    if (SVFUtil::isa<Instruction>(ref) && isHeapAllocExtCallViaRet(SVFUtil::cast<Instruction>(ref)))
+        return true;
     if (SVFUtil::isa<GlobalVariable>(ref))
-        createobj = true;
+        return true;
     if (SVFUtil::isa<Function, AllocaInst>(ref))
-        createobj = true;
+        return true;
 
-    return createobj;
+    return false;
 }
 
 /*!
@@ -71,10 +73,9 @@ bool LLVMUtil::isObject(const Value*  ref)
  */
 void LLVMUtil::getFunReachableBBs (const Function* fun, std::vector<const SVFBasicBlock*> &reachableBBs)
 {
-    assert(!SVFUtil::isExtCall(LLVMModuleSet::getLLVMModuleSet()->getSVFFunction(fun)) && "The calling function cannot be an external function.");
+    assert(!LLVMUtil::isExtCall(fun) && "The calling function cannot be an external function.");
     //initial DominatorTree
-    DominatorTree dt;
-    dt.recalculate(const_cast<Function&>(*fun));
+    DominatorTree& dt = LLVMModuleSet::getLLVMModuleSet()->getDomTree(fun);
 
     Set<const BasicBlock*> visited;
     std::vector<const BasicBlock*> bbVec;
@@ -101,13 +102,26 @@ void LLVMUtil::getFunReachableBBs (const Function* fun, std::vector<const SVFBas
     }
 }
 
+/**
+ * Return true if the basic block has a return instruction
+ */
+bool LLVMUtil::basicBlockHasRetInst(const BasicBlock* bb)
+{
+    for (BasicBlock::const_iterator it = bb->begin(), eit = bb->end();
+            it != eit; ++it)
+    {
+        if(SVFUtil::isa<ReturnInst>(*it))
+            return true;
+    }
+    return false;
+}
+
 /*!
  * Return true if the function has a return instruction reachable from function entry
  */
-bool LLVMUtil::functionDoesNotRet (const Function*  fun)
+bool LLVMUtil::functionDoesNotRet(const Function*  fun)
 {
-    const SVFFunction* svffun = LLVMModuleSet::getLLVMModuleSet()->getSVFFunction(fun);
-    if (SVFUtil::isExtCall(svffun))
+    if (LLVMUtil::isExtCall(fun))
     {
         return fun->getReturnType()->isVoidTy();
     }
@@ -118,11 +132,9 @@ bool LLVMUtil::functionDoesNotRet (const Function*  fun)
     {
         const BasicBlock* bb = bbVec.back();
         bbVec.pop_back();
-        for (BasicBlock::const_iterator it = bb->begin(), eit = bb->end();
-                it != eit; ++it)
+        if (basicBlockHasRetInst(bb))
         {
-            if(SVFUtil::isa<ReturnInst>(*it))
-                return false;
+            return false;
         }
 
         for (succ_const_iterator sit = succ_begin(bb), esit = succ_end(bb);
@@ -153,22 +165,6 @@ bool LLVMUtil::isUncalledFunction (const Function*  fun)
         if (LLVMUtil::isCallSite(*i))
             return false;
     }
-    if (LLVMModuleSet::getLLVMModuleSet()->hasDeclaration(fun))
-    {
-        const LLVMModuleSet::FunctionSetType &decls = LLVMModuleSet::getLLVMModuleSet()->getDeclaration(fun);
-        for (LLVMModuleSet::FunctionSetType::const_iterator it = decls.begin(),
-                eit = decls.end(); it != eit; ++it)
-        {
-            const Function* decl = *it;
-            if(decl->hasAddressTaken())
-                return false;
-            for (Value::const_user_iterator i = decl->user_begin(), e = decl->user_end(); i != e; ++i)
-            {
-                if (LLVMUtil::isCallSite(*i))
-                    return false;
-            }
-        }
-    }
     return true;
 }
 
@@ -193,7 +189,6 @@ bool LLVMUtil::isPtrInUncalledFunction (const Value*  value)
 bool LLVMUtil::isIntrinsicFun(const Function* func)
 {
     if (func && (func->getIntrinsicID() == llvm::Intrinsic::donothing ||
-                 func->getIntrinsicID() == llvm::Intrinsic::dbg_addr ||
                  func->getIntrinsicID() == llvm::Intrinsic::dbg_declare ||
                  func->getIntrinsicID() == llvm::Intrinsic::dbg_label ||
                  func->getIntrinsicID() == llvm::Intrinsic::dbg_value))
@@ -274,125 +269,41 @@ const Value*  LLVMUtil::stripAllCasts(const Value* val)
     return nullptr;
 }
 
-/// Get the next instructions following control flow
-void LLVMUtil::getNextInsts(const Instruction* curInst, std::vector<const SVFInstruction*>& instList)
-{
-    if (!curInst->isTerminator())
-    {
-        const Instruction* nextInst = curInst->getNextNode();
-        const SVFInstruction* svfNextInst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(nextInst);
-        if (LLVMUtil::isIntrinsicInst(nextInst))
-            getNextInsts(nextInst, instList);
-        else
-            instList.push_back(svfNextInst);
-    }
-    else
-    {
-        const BasicBlock* BB = curInst->getParent();
-        // Visit all successors of BB in the CFG
-        for (succ_const_iterator it = succ_begin(BB), ie = succ_end(BB); it != ie; ++it)
-        {
-            const Instruction* nextInst = &((*it)->front());
-            const SVFInstruction* svfNextInst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(nextInst);
-            if (LLVMUtil::isIntrinsicInst(nextInst))
-                getNextInsts(nextInst, instList);
-            else
-                instList.push_back(svfNextInst);
-        }
-    }
-}
-
-
-/// Get the previous instructions following control flow
-void LLVMUtil::getPrevInsts(const Instruction* curInst, std::vector<const SVFInstruction*>& instList)
-{
-
-    if (curInst != &(curInst->getParent()->front()))
-    {
-        const Instruction* prevInst = curInst->getPrevNode();
-        const SVFInstruction* svfPrevInst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(prevInst);
-        if (LLVMUtil::isIntrinsicInst(prevInst))
-            getPrevInsts(prevInst, instList);
-        else
-            instList.push_back(svfPrevInst);
-    }
-    else
-    {
-        const BasicBlock* BB = curInst->getParent();
-        // Visit all successors of BB in the CFG
-        for (const_pred_iterator it = pred_begin(BB), ie = pred_end(BB); it != ie; ++it)
-        {
-            const Instruction* prevInst = &((*it)->back());
-            const SVFInstruction* svfPrevInst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(prevInst);
-            if (LLVMUtil::isIntrinsicInst(prevInst))
-                getPrevInsts(prevInst, instList);
-            else
-                instList.push_back(svfPrevInst);
-        }
-    }
-}
-
 /*
  * Get the first dominated cast instruction for heap allocations since they typically come from void* (i8*)
  * for example, %4 = call align 16 i8* @malloc(i64 10); %5 = bitcast i8* %4 to i32*
  * return %5 whose type is i32* but not %4 whose type is i8*
  */
-const Value* LLVMUtil::getUniqueUseViaCastInst(const Value* val)
+const Value* LLVMUtil::getFirstUseViaCastInst(const Value* val)
 {
-    const PointerType * type = SVFUtil::dyn_cast<PointerType>(val->getType());
-    assert(type && "this value should be a pointer type!");
-    /// If type is void* (i8*) and val is only used at a bitcast instruction
-    if (IntegerType *IT = SVFUtil::dyn_cast<IntegerType>(getPtrElementType(type)))
+    assert(SVFUtil::isa<PointerType>(val->getType()) && "this value should be a pointer type!");
+    /// If type is void* (i8*) and val is immediately used at a bitcast instruction
+    const Value *latestUse = nullptr;
+    for (const auto &it : val->uses())
     {
-        if (IT->getBitWidth() == 8 && val->getNumUses()==1)
-        {
-            const Use *u = &*val->use_begin();
-            return SVFUtil::dyn_cast<BitCastInst>(u->getUser());
-        }
+        if (SVFUtil::isa<BitCastInst>(it.getUser()))
+            latestUse = it.getUser();
+        else
+            latestUse = nullptr;
     }
-    return nullptr;
+    return latestUse;
 }
 
 /*!
- * Return the type of the object from a heap allocation
+ * Return size of this Object
  */
-const Type* LLVMUtil::getTypeOfHeapAlloc(const Instruction *inst)
+u32_t LLVMUtil::getNumOfElements(const Type* ety)
 {
-    const PointerType* type = SVFUtil::dyn_cast<PointerType>(inst->getType());
-    const SVFInstruction* svfinst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(inst);
-    if(SVFUtil::isHeapAllocExtCallViaRet(svfinst))
+    assert(ety && "type is null?");
+    u32_t numOfFields = 1;
+    if (SVFUtil::isa<StructType, ArrayType>(ety))
     {
-        if(const Value* v = getUniqueUseViaCastInst(inst))
-        {
-            if(const PointerType* newTy = SVFUtil::dyn_cast<PointerType>(v->getType()))
-                type = newTy;
-        }
+        if(Options::ModelArrays())
+            return LLVMModuleSet::getLLVMModuleSet()->getSVFType(ety)->getTypeInfo()->getNumOfFlattenElements();
+        else
+            return LLVMModuleSet::getLLVMModuleSet()->getSVFType(ety)->getTypeInfo()->getNumOfFlattenFields();
     }
-    else if(SVFUtil::isHeapAllocExtCallViaArg(svfinst))
-    {
-        const CallBase* cs = LLVMUtil::getLLVMCallSite(inst);
-        int arg_pos = SVFUtil::getHeapAllocHoldingArgPosition(SVFUtil::getSVFCallSite(svfinst));
-        const Value* arg = cs->getArgOperand(arg_pos);
-        type = SVFUtil::dyn_cast<PointerType>(arg->getType());
-    }
-    else
-    {
-        assert( false && "not a heap allocation instruction?");
-    }
-
-    assert(type && "not a pointer type?");
-    return getPtrElementType(type);
-}
-
-/*!
- * Get the num of BB's predecessors
- */
-u32_t LLVMUtil::getBBPredecessorNum(const BasicBlock* BB)
-{
-    u32_t num = 0;
-    for (const_pred_iterator it = pred_begin(BB), et = pred_end(BB); it != et; ++it)
-        num++;
-    return num;
+    return numOfFields;
 }
 
 /*
@@ -402,16 +313,20 @@ u32_t LLVMUtil::getBBPredecessorNum(const BasicBlock* BB)
  */
 bool LLVMUtil::isIRFile(const std::string &filename)
 {
-    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> FileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(filename);
-    if (FileOrErr.getError())
-        return false;
-    llvm::MemoryBufferRef Buffer = FileOrErr.get()->getMemBufferRef();
-    const unsigned char *bufferStart =
-        (const unsigned char *)Buffer.getBufferStart();
-    const unsigned char *bufferEnd =
-        (const unsigned char *)Buffer.getBufferEnd();
-    return llvm::isBitcode(bufferStart, bufferEnd) ? true :
-           Buffer.getBuffer().startswith("; ModuleID =");
+    llvm::LLVMContext context;
+    llvm::SMDiagnostic err;
+
+    // Parse the input LLVM IR file into a module
+    std::unique_ptr<llvm::Module> module = llvm::parseIRFile(filename, err, context);
+
+    // Check if the parsing succeeded
+    if (!module)
+    {
+        err.print("isIRFile", llvm::errs());
+        return false; // Not an LLVM IR file
+    }
+
+    return true; // It is an LLVM IR file
 }
 
 
@@ -444,26 +359,91 @@ void LLVMUtil::processArguments(int argc, char **argv, int &arg_num, char **arg_
     }
 }
 
-
-u32_t LLVMUtil::getTypeSizeInBytes(const Type* type)
+/// Get all called funcions in a parent function
+std::vector<const Function *> LLVMUtil::getCalledFunctions(const Function *F)
 {
-
-    // if the type has size then simply return it, otherwise just return 0
-    if(type->isSized())
-        return getDataLayout(LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule())->getTypeStoreSize(const_cast<Type*>(type));
-    else
-        return 0;
+    std::vector<const Function *> calledFunctions;
+    for (const Instruction &I : instructions(F))
+    {
+        if (const CallBase *callInst = SVFUtil::dyn_cast<CallBase>(&I))
+        {
+            Function *calledFunction = callInst->getCalledFunction();
+            if (calledFunction)
+            {
+                calledFunctions.push_back(calledFunction);
+                std::vector<const Function *> nestedCalledFunctions = getCalledFunctions(calledFunction);
+                calledFunctions.insert(calledFunctions.end(), nestedCalledFunctions.begin(), nestedCalledFunctions.end());
+            }
+        }
+    }
+    return calledFunctions;
 }
 
-u32_t LLVMUtil::getTypeSizeInBytes(const StructType *sty, u32_t field_idx)
-{
 
-    const StructLayout *stTySL = getDataLayout(LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule())->getStructLayout( const_cast<StructType *>(sty) );
-    /// if this struct type does not have any element, i.e., opaque
-    if(sty->isOpaque())
-        return 0;
-    else
-        return stTySL->getElementOffset(field_idx);
+bool LLVMUtil::isExtCall(const Function* fun)
+{
+    return fun && LLVMModuleSet::getLLVMModuleSet()->is_ext(fun);
+}
+
+bool LLVMUtil::isMemcpyExtFun(const Function *fun)
+{
+    return fun && LLVMModuleSet::getLLVMModuleSet()->is_memcpy(fun);
+}
+
+
+bool LLVMUtil::isMemsetExtFun(const Function* fun)
+{
+    return fun && LLVMModuleSet::getLLVMModuleSet()->is_memset(fun);
+}
+
+
+u32_t LLVMUtil::getHeapAllocHoldingArgPosition(const Function* fun)
+{
+    return LLVMModuleSet::getLLVMModuleSet()->get_alloc_arg_pos(fun);
+}
+
+
+std::string LLVMUtil::restoreFuncName(std::string funcName)
+{
+    assert(!funcName.empty() && "Empty function name");
+    // Some function names change due to mangling, such as "fopen" to "\01_fopen" on macOS.
+    // Since C function names cannot include '.', change the function name from llvm.memcpy.p0i8.p0i8.i64 to llvm_memcpy_p0i8_p0i8_i64."
+    bool hasSpecialPrefix = funcName[0] == '\01';
+    bool hasDot = funcName.find('.') != std::string::npos;
+
+    if (!hasDot && !hasSpecialPrefix)
+        return funcName;
+
+    // Remove prefix "\01_" or "\01"
+    if (hasSpecialPrefix)
+    {
+        const std::string prefix1 = "\01_";
+        const std::string prefix2 = "\01";
+        if (funcName.substr(0, prefix1.length()) == prefix1)
+            funcName = funcName.substr(prefix1.length());
+        else if (funcName.substr(0, prefix2.length()) == prefix2)
+            funcName = funcName.substr(prefix2.length());
+    }
+    // Replace '.' with '_'
+    if (hasDot)
+        std::replace(funcName.begin(), funcName.end(), '.', '_');
+
+    return funcName;
+}
+
+
+const FunObjVar* LLVMUtil::getFunObjVar(const std::string& name)
+{
+    return LLVMModuleSet::getLLVMModuleSet()->getFunObjVar(name);
+}
+const Value* LLVMUtil::getGlobalRep(const Value* val)
+{
+    if (const GlobalVariable* gvar = SVFUtil::dyn_cast<GlobalVariable>(val))
+    {
+        if (LLVMModuleSet::getLLVMModuleSet()->hasGlobalRep(gvar))
+            val = LLVMModuleSet::getLLVMModuleSet()->getGlobalRep(gvar);
+    }
+    return val;
 }
 
 /*!
@@ -481,12 +461,12 @@ const std::string LLVMUtil::getSourceLoc(const Value* val )
     {
         if (SVFUtil::isa<AllocaInst>(inst))
         {
-            for (llvm::DbgInfoIntrinsic *DII : FindDbgAddrUses(const_cast<Instruction*>(inst)))
+            for (llvm::DbgInfoIntrinsic *DII : FindDbgDeclareUses(const_cast<Instruction*>(inst)))
             {
                 if (llvm::DbgDeclareInst *DDI = SVFUtil::dyn_cast<llvm::DbgDeclareInst>(DII))
                 {
                     llvm::DIVariable *DIVar = SVFUtil::cast<llvm::DIVariable>(DDI->getVariable());
-                    rawstr << "ln: " << DIVar->getLine() << " fl: " << DIVar->getFilename().str();
+                    rawstr << "\"ln\": " << DIVar->getLine() << ", \"fl\": \"" << DIVar->getFilename().str() << "\"";
                     break;
                 }
             }
@@ -508,7 +488,7 @@ const std::string LLVMUtil::getSourceLoc(const Value* val )
                     File = inlineLoc->getFilename().str();
                 }
             }
-            rawstr << "ln: " << Line << "  cl: " << Column << "  fl: " << File;
+            rawstr << "\"ln\": " << Line << ", \"cl\": " << Column << ", \"fl\": \"" << File << "\"";
         }
     }
     else if (const Argument* argument = SVFUtil::dyn_cast<Argument>(val))
@@ -539,7 +519,7 @@ const std::string LLVMUtil::getSourceLoc(const Value* val )
 
                     if(DGV->getName() == gvar->getName())
                     {
-                        rawstr << "ln: " << DGV->getLine() << " fl: " << DGV->getFilename().str();
+                        rawstr << "\"ln\": " << DGV->getLine() << ", \"fl\": \"" << DGV->getFilename().str() << "\"";
                     }
 
                 }
@@ -552,7 +532,7 @@ const std::string LLVMUtil::getSourceLoc(const Value* val )
     }
     else if (const BasicBlock* bb = SVFUtil::dyn_cast<BasicBlock>(val))
     {
-        rawstr << "basic block: " << bb->getName().str() << " " << getSourceLoc(bb->getFirstNonPHI());
+        rawstr << "\"basic block\": " << bb->getName().str() << ", \"location\": " << getSourceLoc(bb->getFirstNonPHI());
     }
     else if(LLVMUtil::isConstDataOrAggData(val))
     {
@@ -560,7 +540,7 @@ const std::string LLVMUtil::getSourceLoc(const Value* val )
     }
     else
     {
-        rawstr << "Can only get source location for instruction, argument, global var, function or constant data.";
+        rawstr << "N/A";
     }
     rawstr << " }";
 
@@ -584,7 +564,7 @@ const std::string LLVMUtil::getSourceLocOfFunction(const Function* F)
     if (llvm::DISubprogram *SP =  F->getSubprogram())
     {
         if (SP->describes(F))
-            rawstr << "in line: " << SP->getLine() << " file: " << SP->getFilename().str();
+            rawstr << "\"ln\": " << SP->getLine() << ", \"file\": \"" << SP->getFilename().str() << "\"";
     }
     return rawstr.str();
 }
@@ -616,444 +596,159 @@ void LLVMUtil::getNextInsts(const Instruction* curInst, std::vector<const Instru
 }
 
 
-/// Get the previous instructions following control flow
-void LLVMUtil::getPrevInsts(const Instruction* curInst, std::vector<const Instruction*>& instList)
+
+std::string LLVMUtil::dumpValue(const Value* val)
 {
-    if (curInst != &(curInst->getParent()->front()))
+    std::string str;
+    llvm::raw_string_ostream rawstr(str);
+    if (val)
+        rawstr << " " << *val << " ";
+    else
+        rawstr << " llvm Value is null";
+    return rawstr.str();
+}
+
+std::string LLVMUtil::dumpType(const Type* type)
+{
+    std::string str;
+    llvm::raw_string_ostream rawstr(str);
+    if (type)
+        rawstr << " " << *type << " ";
+    else
+        rawstr << " llvm type is null";
+    return rawstr.str();
+}
+
+std::string LLVMUtil::dumpValueAndDbgInfo(const Value *val)
+{
+    std::string str;
+    llvm::raw_string_ostream rawstr(str);
+    if (val)
+        rawstr << dumpValue(val) << getSourceLoc(val);
+    else
+        rawstr << " llvm Value is null";
+    return rawstr.str();
+}
+
+bool LLVMUtil::isHeapAllocExtCallViaRet(const Instruction* inst)
+{
+    LLVMModuleSet* pSet = LLVMModuleSet::getLLVMModuleSet();
+    bool isPtrTy = inst->getType()->isPointerTy();
+    if (const CallBase* call = SVFUtil::dyn_cast<CallBase>(inst))
     {
-        const Instruction* prevInst = curInst->getPrevNode();
-        if (LLVMUtil::isIntrinsicInst(prevInst))
-            getPrevInsts(prevInst, instList);
-        else
-            instList.push_back(prevInst);
+        const Function* fun = call->getCalledFunction();
+        return fun && isPtrTy &&
+               (pSet->is_alloc(fun) ||
+                pSet->is_realloc(fun));
+    }
+    else
+        return false;
+}
+
+bool LLVMUtil::isHeapAllocExtCallViaArg(const Instruction* inst)
+{
+    if (const CallBase* call = SVFUtil::dyn_cast<CallBase>(inst))
+    {
+        const Function* fun = call->getCalledFunction();
+        return fun &&
+               LLVMModuleSet::getLLVMModuleSet()->is_arg_alloc(fun);
     }
     else
     {
-        const BasicBlock *BB = curInst->getParent();
-        // Visit all successors of BB in the CFG
-        for (const_pred_iterator it = pred_begin(BB), ie = pred_end(BB); it != ie; ++it)
-        {
-            const Instruction* prevInst = &((*it)->back());
-            if (LLVMUtil::isIntrinsicInst(prevInst))
-                getPrevInsts(prevInst, instList);
-            else
-                instList.push_back(prevInst);
-        }
-    }
-}
-
-/// Check whether this value points-to a constant object
-bool LLVMUtil::isConstantObjSym(const SVFValue* val)
-{
-    return isConstantObjSym(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(val));
-}
-
-/*!
- * Check whether this value points-to a constant object
- */
-bool LLVMUtil::isConstantObjSym(const Value* val)
-{
-    if (const GlobalVariable* v = SVFUtil::dyn_cast<GlobalVariable>(val))
-    {
-        if (LLVMUtil::isValVtbl(v))
-            return false;
-        else if (!v->hasInitializer())
-        {
-            if(v->isExternalLinkage(v->getLinkage()))
-                return false;
-            else
-                return true;
-        }
-        else
-        {
-            StInfo *stInfo = LLVMModuleSet::getLLVMModuleSet()->getSVFType(v->getInitializer()->getType())->getTypeInfo();
-            const std::vector<const SVFType*> &fields = stInfo->getFlattenFieldTypes();
-            for (std::vector<const SVFType*>::const_iterator it = fields.begin(), eit = fields.end(); it != eit; ++it)
-            {
-                const SVFType* elemTy = *it;
-                assert(!SVFUtil::isa<SVFFunctionType>(elemTy) && "Initializer of a global is a function?");
-                if (SVFUtil::isa<SVFPointerType>(elemTy))
-                    return false;
-            }
-
-            return v->isConstant();
-        }
-    }
-    return LLVMUtil::isConstDataOrAggData(val);
-}
-
-bool LLVMUtil::isValVtbl(const Value* val)
-{
-    if (!SVFUtil::isa<GlobalVariable>(val))
         return false;
-    std::string valName = val->getName().str();
-    return valName.compare(0, vtblLabelBeforeDemangle.size(),
-                           vtblLabelBeforeDemangle) == 0;
-}
-
-bool LLVMUtil::isLoadVtblInst(const LoadInst* loadInst)
-{
-    const Value* loadSrc = loadInst->getPointerOperand();
-    const Type* valTy = loadSrc->getType();
-    const Type* elemTy = valTy;
-    for (u32_t i = 0; i < 3; ++i)
-    {
-        if (const PointerType* ptrTy = SVFUtil::dyn_cast<PointerType>(elemTy))
-            elemTy = LLVMUtil::getPtrElementType(ptrTy);
-        else
-            return false;
     }
-    if (const FunctionType* functy = SVFUtil::dyn_cast<FunctionType>(elemTy))
-    {
-        const Type* paramty = functy->getParamType(0);
-        std::string className = LLVMUtil::getClassNameFromType(paramty);
-        if (className.size() > 0)
-        {
-            return true;
-        }
-    }
-    return false;
 }
 
-/*
- * a virtual callsite follows the following instruction sequence pattern:
- * %vtable = load this
- * %vfn = getelementptr %vtable, idx
- * %x = load %vfn
- * call %x (this)
- */
-bool LLVMUtil::isVirtualCallSite(const CallBase* cs)
+bool LLVMUtil::isStackAllocExtCallViaRet(const Instruction *inst)
 {
-    // the callsite must be an indirect one with at least one argument (this
-    // ptr)
-    if (cs->getCalledFunction() != nullptr || cs->arg_empty())
-        return false;
-
-    // the first argument (this pointer) must be a pointer type and must be a
-    // class name
-    if (cs->getArgOperand(0)->getType()->isPointerTy() == false)
-        return false;
-
-    const Value* vfunc = cs->getCalledOperand();
-    if (const LoadInst* vfuncloadinst = SVFUtil::dyn_cast<LoadInst>(vfunc))
+    LLVMModuleSet* pSet = LLVMModuleSet::getLLVMModuleSet();
+    bool isPtrTy = inst->getType()->isPointerTy();
+    if (const CallBase* call = SVFUtil::dyn_cast<CallBase>(inst))
     {
-        const Value* vfuncptr = vfuncloadinst->getPointerOperand();
-        if (const GetElementPtrInst* vfuncptrgepinst =
-                    SVFUtil::dyn_cast<GetElementPtrInst>(vfuncptr))
-        {
-            if (vfuncptrgepinst->getNumIndices() != 1)
-                return false;
-            const Value* vtbl = vfuncptrgepinst->getPointerOperand();
-            if (SVFUtil::isa<LoadInst>(vtbl))
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-bool LLVMUtil::isCPPThunkFunction(const Function* F)
-{
-    cppUtil::DemangledName dname = cppUtil::demangle(F->getName().str());
-    return dname.isThunkFunc;
-}
-
-const Function* LLVMUtil::getThunkTarget(const Function* F)
-{
-    const Function* ret = nullptr;
-
-    for (auto& bb : *F)
-    {
-        for (auto& inst : bb)
-        {
-            if (const CallBase* callbase = SVFUtil::dyn_cast<CallBase>(&inst))
-            {
-                // assert(cs.getCalledFunction() &&
-                //        "Indirect call detected in thunk func");
-                // assert(ret == nullptr && "multiple callsites in thunk func");
-
-                ret = callbase->getCalledFunction();
-            }
-        }
-    }
-
-    return ret;
-}
-
-const Value* LLVMUtil::getVCallThisPtr(const CallBase* cs)
-{
-    if (cs->paramHasAttr(0, llvm::Attribute::StructRet))
-    {
-        return cs->getArgOperand(1);
+        const Function* fun = call->getCalledFunction();
+        return fun && isPtrTy &&
+               pSet->is_alloc_stack_ret(fun);
     }
     else
-    {
-        return cs->getArgOperand(0);
-    }
+        return false;
 }
 
-/*!
- * Given a inheritance relation B is a child of A
- * We assume B::B(thisPtr1){ A::A(thisPtr2) } such that thisPtr1 == thisPtr2
- * In the following code thisPtr1 is "%class.B1* %this" and thisPtr2 is
- * "%class.A* %0".
+/**
+ * Check if a given value represents a heap object.
  *
- *
- * define linkonce_odr dso_local void @B1::B1()(%class.B1* %this) unnamed_addr #6 comdat
- *   %this.addr = alloca %class.B1*, align 8
- *   store %class.B1* %this, %class.B1** %this.addr, align 8
- *   %this1 = load %class.B1*, %class.B1** %this.addr, align 8
- *   %0 = bitcast %class.B1* %this1 to %class.A*
- *   call void @A::A()(%class.A* %0)
+ * @param val The value to check.
+ * @return True if the value represents a heap object, false otherwise.
  */
-bool LLVMUtil::isSameThisPtrInConstructor(const Argument* thisPtr1,
-        const Value* thisPtr2)
+bool LLVMUtil::isHeapObj(const Value* val)
 {
-    if (thisPtr1 == thisPtr2)
+    // Check if the value is an argument in the program entry function
+    if (ArgInProgEntryFunction(val))
+    {
+        // Return true if the value does not have a first use via cast instruction
+        return !getFirstUseViaCastInst(val);
+    }
+    // Check if the value is an instruction and if it is a heap allocation external call
+    else if (SVFUtil::isa<Instruction>(val) &&
+             LLVMUtil::isHeapAllocExtCall(SVFUtil::cast<Instruction>(val)))
+    {
         return true;
-    for (const Value* thisU : thisPtr1->users())
-    {
-        if (const StoreInst* store = SVFUtil::dyn_cast<StoreInst>(thisU))
-        {
-            for (const Value* storeU : store->getPointerOperand()->users())
-            {
-                if (const LoadInst* load = SVFUtil::dyn_cast<LoadInst>(storeU))
-                {
-                    if (load->getNextNode() &&
-                            SVFUtil::isa<CastInst>(load->getNextNode()))
-                        return SVFUtil::cast<CastInst>(load->getNextNode()) ==
-                               (thisPtr2->stripPointerCasts());
-                }
-            }
-        }
     }
+    // Return false if none of the above conditions are met
     return false;
 }
 
-const Argument* LLVMUtil::getConstructorThisPtr(const Function* fun)
-{
-    assert((LLVMUtil::isConstructor(fun) || LLVMUtil::isDestructor(fun)) &&
-           "not a constructor?");
-    assert(fun->arg_size() >= 1 && "argument size >= 1?");
-    const Argument* thisPtr = &*(fun->arg_begin());
-    return thisPtr;
-}
-
-bool LLVMUtil::isConstructor(const Function* F)
-{
-    if (F->isDeclaration())
-        return false;
-    std::string funcName = F->getName().str();
-    if (funcName.compare(0, vfunPreLabel.size(), vfunPreLabel) != 0)
-    {
-        return false;
-    }
-    struct cppUtil::DemangledName dname = cppUtil::demangle(funcName.c_str());
-    if (dname.className.size() == 0)
-    {
-        return false;
-    }
-    dname.funcName = cppUtil::getBeforeBrackets(dname.funcName);
-    dname.className = cppUtil::getBeforeBrackets(dname.className);
-    size_t colon = dname.className.rfind("::");
-    if (colon == std::string::npos)
-    {
-        dname.className = cppUtil::getBeforeBrackets(dname.className);
-    }
-    else
-    {
-        dname.className =
-            cppUtil::getBeforeBrackets(dname.className.substr(colon + 2));
-    }
-    /// TODO: on mac os function name is an empty string after demangling
-    return dname.className.size() > 0 &&
-           dname.className.compare(dname.funcName) == 0;
-}
-
-bool LLVMUtil::isDestructor(const Function* F)
-{
-    if (F->isDeclaration())
-        return false;
-    std::string funcName = F->getName().str();
-    if (funcName.compare(0, vfunPreLabel.size(), vfunPreLabel) != 0)
-    {
-        return false;
-    }
-    struct cppUtil::DemangledName dname = cppUtil::demangle(funcName.c_str());
-    if (dname.className.size() == 0)
-    {
-        return false;
-    }
-    dname.funcName = cppUtil::getBeforeBrackets(dname.funcName);
-    dname.className = cppUtil::getBeforeBrackets(dname.className);
-    size_t colon = dname.className.rfind("::");
-    if (colon == std::string::npos)
-    {
-        dname.className = cppUtil::getBeforeBrackets(dname.className);
-    }
-    else
-    {
-        dname.className =
-            cppUtil::getBeforeBrackets(dname.className.substr(colon + 2));
-    }
-    return (dname.className.size() > 0 && dname.funcName.size() > 0 &&
-            dname.className.size() + 1 == dname.funcName.size() &&
-            dname.funcName.compare(0, 1, "~") == 0 &&
-            dname.className.compare(dname.funcName.substr(1)) == 0);
-}
-
-/*
- * get the ptr "vtable" for a given virtual callsite:
- * %vtable = load ...
- * %vfn = getelementptr %vtable, idx
- * %x = load %vfn
- * call %x (...)
+/**
+ * @param val The value to check.
+ * @return True if the value represents a stack object, false otherwise.
  */
-const Value* LLVMUtil::getVCallVtblPtr(const CallBase* cs)
+bool LLVMUtil::isStackObj(const Value* val)
 {
-    const LoadInst* loadInst =
-        SVFUtil::dyn_cast<LoadInst>(cs->getCalledOperand());
-    assert(loadInst != nullptr);
-    const Value* vfuncptr = loadInst->getPointerOperand();
-    const GetElementPtrInst* gepInst =
-        SVFUtil::dyn_cast<GetElementPtrInst>(vfuncptr);
-    assert(gepInst != nullptr);
-    const Value* vtbl = gepInst->getPointerOperand();
-    return vtbl;
-}
-
-/*
- * Is this virtual call inside its own constructor or destructor?
- */
-bool LLVMUtil::VCallInCtorOrDtor(const CallBase* cs)
-{
-    std::string classNameOfThisPtr = LLVMUtil::getClassNameOfThisPtr(cs);
-    const Function* func = cs->getCaller();
-    if (LLVMUtil::isConstructor(func) || LLVMUtil::isDestructor(func))
+    if (SVFUtil::isa<AllocaInst>(val))
     {
-        cppUtil::DemangledName dname = cppUtil::demangle(func->getName().str());
-        if (classNameOfThisPtr.compare(dname.className) == 0)
-            return true;
+        return true;
     }
+    // Check if the value is an instruction and if it is a stack allocation external call
+    else if (SVFUtil::isa<Instruction>(val) &&
+             LLVMUtil::isStackAllocExtCall(SVFUtil::cast<Instruction>(val)))
+    {
+        return true;
+    }
+    // Return false if none of the above conditions are met
     return false;
 }
 
-std::string LLVMUtil::getClassNameFromType(const Type* ty)
+bool LLVMUtil::isNonInstricCallSite(const Instruction* inst)
 {
-    std::string className = "";
-    if (const PointerType* ptrType = SVFUtil::dyn_cast<PointerType>(ty))
-    {
-        const Type* elemType = LLVMUtil::getPtrElementType(ptrType);
-        if (SVFUtil::isa<StructType>(elemType) &&
-                !((SVFUtil::cast<StructType>(elemType))->isLiteral()))
-        {
-            std::string elemTypeName = elemType->getStructName().str();
-            if (elemTypeName.compare(0, clsName.size(), clsName) == 0)
-            {
-                className = elemTypeName.substr(clsName.size());
-            }
-            else if (elemTypeName.compare(0, structName.size(), structName) ==
-                     0)
-            {
-                className = elemTypeName.substr(structName.size());
-            }
-        }
-    }
-    return className;
-}
+    bool res = false;
 
-std::string LLVMUtil::getClassNameOfThisPtr(const CallBase* inst)
-{
-    std::string thisPtrClassName;
-    if (const MDNode* N = inst->getMetadata("VCallPtrType"))
-    {
-        const MDString* mdstr = SVFUtil::cast<MDString>(N->getOperand(0).get());
-        thisPtrClassName = mdstr->getString().str();
-    }
-    if (thisPtrClassName.size() == 0)
-    {
-        const Value* thisPtr = LLVMUtil::getVCallThisPtr(inst);
-        thisPtrClassName = getClassNameFromType(thisPtr->getType());
-    }
-
-    size_t found = thisPtrClassName.find_last_not_of("0123456789");
-    if (found != std::string::npos)
-    {
-        if (found != thisPtrClassName.size() - 1 &&
-                thisPtrClassName[found] == '.')
-        {
-            return thisPtrClassName.substr(0, found);
-        }
-    }
-
-    return thisPtrClassName;
-}
-
-std::string LLVMUtil::getFunNameOfVCallSite(const CallBase* inst)
-{
-    std::string funName;
-    if (const MDNode* N = inst->getMetadata("VCallFunName"))
-    {
-        const MDString* mdstr = SVFUtil::cast<MDString>(N->getOperand(0).get());
-        funName = mdstr->getString().str();
-    }
-    return funName;
-}
-
-s32_t LLVMUtil::getVCallIdx(const CallBase* cs)
-{
-    const LoadInst* vfuncloadinst =
-        SVFUtil::dyn_cast<LoadInst>(cs->getCalledOperand());
-    assert(vfuncloadinst != nullptr);
-    const Value* vfuncptr = vfuncloadinst->getPointerOperand();
-    const GetElementPtrInst* vfuncptrgepinst =
-        SVFUtil::dyn_cast<GetElementPtrInst>(vfuncptr);
-    User::const_op_iterator oi = vfuncptrgepinst->idx_begin();
-    const ConstantInt* idx = SVFUtil::dyn_cast<ConstantInt>(oi->get());
-    s32_t idx_value;
-    if (idx == nullptr)
-    {
-        SVFUtil::errs() << "vcall gep idx not constantint\n";
-        idx_value = 0;
-    }
+    if(isIntrinsicInst(inst))
+        res = false;
     else
-    {
-        idx_value = (s32_t)idx->getSExtValue();
-    }
-    return idx_value;
+        res = isCallSite(inst);
+    return res;
 }
 
 namespace SVF
 {
-const std::string SVFValue::toString() const
+
+
+const std::string SVFValue::valueOnlyToString() const
 {
     std::string str;
     llvm::raw_string_ostream rawstr(str);
-    if (const SVF::SVFFunction* fun = SVFUtil::dyn_cast<SVFFunction>(this))
-    {
-        rawstr << "Function: " << fun->getName() << " ";
-    }
-    else if (const SVFBasicBlock* bb = SVFUtil::dyn_cast<SVFBasicBlock>(this))
-    {
-        rawstr << "BasicBlock: " << bb->getName() << " ";
-    }
+    assert(
+        !SVFUtil::isa<GepObjVar>(this) && !SVFUtil::isa<GepValVar>(this) &&
+        !SVFUtil::isa<DummyObjVar>(this) &&!SVFUtil::isa<DummyValVar>(this) &&
+        !SVFUtil::isa<BlackHoleValVar>(this) &&
+        "invalid value, refer to their toString method");
+    auto llvmVal =
+        LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(this);
+    if (llvmVal)
+        rawstr << " " << *llvmVal << " ";
     else
-    {
-        const Value* val =
-            LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(this);
-        rawstr << " " << *val << " ";
-    }
-    rawstr << this->getSourceLoc();
+        rawstr << "";
+    rawstr << getSourceLoc();
     return rawstr.str();
 }
 
-const std::string SVFType::toString() const
-{
-    std::string str;
-    llvm::raw_string_ostream rawstr(str);
-    const Type* ty = LLVMModuleSet::getLLVMModuleSet()->getLLVMType(this);
-    rawstr << *ty;
-    return rawstr.str();
-}
-}
+} // namespace SVF

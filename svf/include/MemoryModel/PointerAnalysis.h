@@ -33,23 +33,21 @@
 #include <unistd.h>
 #include <signal.h>
 
-#include "SVFIR/SVFIR.h"
-#include "MemoryModel/ConditionalPT.h"
+#include "Graphs/CHG.h"
+#include "Graphs/ThreadCallGraph.h"
+#include "Graphs/SCC.h"
 #include "MemoryModel/AbstractPointsToDS.h"
+#include "MemoryModel/ConditionalPT.h"
 #include "MemoryModel/MutablePointsToDS.h"
 #include "MemoryModel/PersistentPointsToDS.h"
-#include "Graphs/PTACallGraph.h"
-#include "Graphs/CHG.h"
-#include "Util/SCC.h"
 #include "MemoryModel/PointsTo.h"
+#include "SVFIR/SVFIR.h"
 
 namespace SVF
 {
 
 class CommonCHGraph;
 
-class TypeSystem;
-class SVFModule;
 class ICFG;
 class PTAStat;
 /*
@@ -76,7 +74,7 @@ public:
         VFS_WPA,		///< Versioned sparse flow-sensitive WPA
         FSCS_WPA,			///< Flow-, context- sensitive WPA
         CFLFICI_WPA,		///< Flow-, context-, insensitive CFL-reachability-based analysis
-        CFLFSCI_WPA,		///< Flow-insensitive, context-sensitive  CFL-reachability-based analysis
+        CFLFSCI_WPA,		///< Flow-insensitive, context-sensitive CFL-reachability-based analysis
         CFLFSCS_WPA,	///< Flow-, context-, CFL-reachability-based analysis
         TypeCPP_WPA, ///<  Type-based analysis for C++
 
@@ -102,11 +100,11 @@ public:
     //@{
     typedef Set<const CallICFGNode*> CallSiteSet;
     typedef SVFIR::CallSiteToFunPtrMap CallSiteToFunPtrMap;
-    typedef Set<const SVFFunction*> FunctionSet;
+    typedef Set<const FunObjVar*> FunctionSet;
     typedef OrderedMap<const CallICFGNode*, FunctionSet> CallEdgeMap;
-    typedef SCCDetection<PTACallGraph*> CallGraphSCC;
-    typedef Set<const SVFGlobalValue*> VTableSet;
-    typedef Set<const SVFFunction*> VFunSet;
+    typedef SCCDetection<CallGraph*> CallGraphSCC;
+    typedef Set<const GlobalObjVar*> VTableSet;
+    typedef Set<const FunObjVar*> VFunSet;
     //@}
 
     static const std::string aliasTestMayAlias;
@@ -140,8 +138,6 @@ protected:
 
     /// SVFIR
     static SVFIR* pag;
-    /// Module
-    SVFModule* svfMod;
     /// Pointer analysis Type
     PTATY ptaTy;
     /// PTA implementation type.
@@ -149,15 +145,13 @@ protected:
     /// Statistics
     PTAStat* stat;
     /// Call graph used for pointer analysis
-    PTACallGraph* ptaCallGraph;
-    /// SCC for CallGraph
+    CallGraph* callgraph;
+    /// SCC for PTACallGraph
     CallGraphSCC* callGraphSCC;
     /// Interprocedural control-flow graph
     ICFG* icfg;
     /// CHGraph
     CommonCHGraph *chgraph;
-    /// TypeSystem
-    TypeSystem *typeSystem;
 
 public:
     /// Get ICFG
@@ -168,12 +162,12 @@ public:
     /// Return number of resolved indirect call edges
     inline u32_t getNumOfResolvedIndCallEdge() const
     {
-        return getPTACallGraph()->getNumOfResolvedIndCallEdge();
+        return getCallGraph()->getNumOfResolvedIndCallEdge();
     }
     /// Return call graph
-    inline PTACallGraph* getPTACallGraph() const
+    inline CallGraph* getCallGraph() const
     {
-        return ptaCallGraph;
+        return callgraph;
     }
     /// Return call graph SCC
     inline CallGraphSCC* getCallGraphSCC() const
@@ -209,11 +203,7 @@ public:
     {
         return stat;
     }
-    /// Module
-    inline SVFModule* getModule() const
-    {
-        return svfMod;
-    }
+
     /// Get all Valid Pointers for resolution
     inline OrderedNodeSet& getAllValidPtrs()
     {
@@ -236,8 +226,8 @@ public:
     virtual void computeDDAPts(NodeID) {}
 
     /// Interface exposed to users of our pointer analysis, given Value infos
-    virtual AliasResult alias(const SVFValue* V1,
-                              const SVFValue* V2) = 0;
+    virtual AliasResult alias(const SVFVar* V1,
+                              const SVFVar* V2) = 0;
 
     /// Interface exposed to users of our pointer analysis, given PAGNodeID
     virtual AliasResult alias(NodeID node1, NodeID node2) = 0;
@@ -301,26 +291,20 @@ public:
     {
         return pag->isBlkObjOrConstantObj(ptd);
     }
-    inline bool isNonPointerObj(NodeID ptd) const
-    {
-        return pag->isNonPointerObj(ptd);
-    }
     //@}
 
     /// Whether this object is heap or array
     //@{
     inline bool isHeapMemObj(NodeID id) const
     {
-        const MemObj* mem = pag->getObject(id);
-        assert(mem && "memory object is null??");
-        return mem->isHeap();
+        return pag->getBaseObject(id) && SVFUtil::isa<HeapObjVar, DummyObjVar>(pag->getBaseObject(id));
     }
 
     inline bool isArrayMemObj(NodeID id) const
     {
-        const MemObj* mem = pag->getObject(id);
-        assert(mem && "memory object is null??");
-        return mem->isArray();
+        const BaseObjVar* obj = pag->getBaseObject(id);
+        assert(obj && "base object is null??");
+        return obj->isArray();
     }
     //@}
 
@@ -328,7 +312,7 @@ public:
     ///@{
     inline bool isFIObjNode(NodeID id) const
     {
-        return (SVFUtil::isa<FIObjVar>(pag->getGNode(id)));
+        return (SVFUtil::isa<BaseObjVar>(pag->getGNode(id)));
     }
     inline NodeID getBaseObjVar(NodeID id)
     {
@@ -338,9 +322,9 @@ public:
     {
         return pag->getFIObjVar(id);
     }
-    inline NodeID getGepObjVar(NodeID id, const LocationSet& ls)
+    inline NodeID getGepObjVar(NodeID id, const APOffset& ap)
     {
-        return pag->getGepObjVar(id,ls);
+        return pag->getGepObjVar(id, ap);
     }
     virtual inline const NodeBS& getAllFieldsObjVars(NodeID id)
     {
@@ -348,13 +332,13 @@ public:
     }
     inline void setObjFieldInsensitive(NodeID id)
     {
-        MemObj* mem =  const_cast<MemObj*>(pag->getBaseObj(id));
-        mem->setFieldInsensitive();
+        BaseObjVar* baseObj = const_cast<BaseObjVar*>(pag->getBaseObject(id));
+        baseObj->setFieldInsensitive();
     }
     inline bool isFieldInsensitive(NodeID id) const
     {
-        const MemObj* mem =  pag->getBaseObj(id);
-        return mem->isFieldInsensitive();
+        const BaseObjVar* baseObj = pag->getBaseObject(id);
+        return baseObj->isFieldInsensitive();
     }
     ///@}
 
@@ -374,30 +358,28 @@ public:
     //@{
     inline CallEdgeMap& getIndCallMap()
     {
-        return getPTACallGraph()->getIndCallMap();
+        return getCallGraph()->getIndCallMap();
     }
     inline bool hasIndCSCallees(const CallICFGNode* cs) const
     {
-        return getPTACallGraph()->hasIndCSCallees(cs);
+        return getCallGraph()->hasIndCSCallees(cs);
     }
     inline const FunctionSet& getIndCSCallees(const CallICFGNode* cs) const
     {
-        return getPTACallGraph()->getIndCSCallees(cs);
+        return getCallGraph()->getIndCSCallees(cs);
     }
     //@}
 
     /// Resolve indirect call edges
     virtual void resolveIndCalls(const CallICFGNode* cs, const PointsTo& target, CallEdgeMap& newEdges);
-    /// Match arguments for callsite at caller and callee
-    bool matchArgs(const CallICFGNode* cs, const SVFFunction* callee);
 
-    /// CallGraph SCC related methods
+    /// PTACallGraph SCC related methods
     //@{
-    /// CallGraph SCC detection
+    /// PTACallGraph SCC detection
     inline void callGraphSCCDetection()
     {
         if(callGraphSCC==nullptr)
-            callGraphSCC = new CallGraphSCC(ptaCallGraph);
+            callGraphSCC = new CallGraphSCC(callgraph);
 
         callGraphSCC->find();
     }
@@ -406,16 +388,16 @@ public:
     {
         return callGraphSCC->repNode(id);
     }
-    /// Return TRUE if this edge is inside a CallGraph SCC, i.e., src node and dst node are in the same SCC on the SVFG.
-    inline bool inSameCallGraphSCC(const SVFFunction* fun1,const SVFFunction* fun2)
+    /// Return TRUE if this edge is inside a PTACallGraph SCC, i.e., src node and dst node are in the same SCC on the SVFG.
+    inline bool inSameCallGraphSCC(const FunObjVar* fun1,const FunObjVar* fun2)
     {
-        const PTACallGraphNode* src = ptaCallGraph->getCallGraphNode(fun1);
-        const PTACallGraphNode* dst = ptaCallGraph->getCallGraphNode(fun2);
+        const CallGraphNode* src = callgraph->getCallGraphNode(fun1);
+        const CallGraphNode* dst = callgraph->getCallGraphNode(fun2);
         return (getCallGraphSCCRepNode(src->getId()) == getCallGraphSCCRepNode(dst->getId()));
     }
-    inline bool isInRecursion(const SVFFunction* fun) const
+    inline bool isInRecursion(const FunObjVar* fun) const
     {
-        return callGraphSCC->isInCycle(ptaCallGraph->getCallGraphNode(fun)->getId());
+        return callGraphSCC->isInCycle(callgraph->getCallGraphNode(fun)->getId());
     }
     /// Whether a local variable is in function recursions
     bool isLocalVarInRecursiveFun(NodeID id) const;
@@ -439,12 +421,6 @@ public:
     virtual void resolveCPPIndCalls(const CallICFGNode* cs,
                                     const PointsTo& target,
                                     CallEdgeMap& newEdges);
-
-    /// get TypeSystem
-    const TypeSystem *getTypeSystem() const
-    {
-        return typeSystem;
-    }
 };
 
 } // End namespace SVF

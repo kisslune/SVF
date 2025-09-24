@@ -88,7 +88,7 @@ void PEG::build(PAG* p)
             addEdge(gep->getRHSVarID(), gep->getLHSVarID(), Asgn);
         else
             addEdge(gep->getRHSVarID(), gep->getLHSVarID(), Gep,
-                    gep->getConstantFieldIdx());
+                    gep->getConstantStructFldIdx());
     }
 
     // opt load and store
@@ -566,7 +566,7 @@ template <> struct DOTGraphTraits<PEG*> : public DOTGraphTraits<PAG*>
             // print the whole value
             if (!SVFUtil::isa<DummyValVar>(node) &&
                 !SVFUtil::isa<DummyObjVar>(node))
-                rawstr << *node->getValue();
+                rawstr << node->getValueName();
             else
                 rawstr << "";
         }

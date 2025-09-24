@@ -39,28 +39,9 @@
 using namespace llvm;
 using namespace SVF;
 
-static Option<bool> LEAKCHECKER(
-    "leak",
-    "Memory Leak Detection",
-    false
-);
-
-static Option<bool> FILECHECKER(
-    "fileck",
-    "File Open/Close Detection",
-    false
-);
-
-static Option<bool> DFREECHECKER(
-    "dfree",
-    "Double Free Detection",
-    false
-);
-
 int main(int argc, char ** argv)
 {
 
-    char **arg_value = new char*[argc];
     std::vector<std::string> moduleNameVec;
     moduleNameVec = OptionBase::parseOptions(
                         argc, argv, "Source-Sink Bug Detector", "[options] <input-bitcode...>"
@@ -68,27 +49,28 @@ int main(int argc, char ** argv)
 
     if (Options::WriteAnder() == "ir_annotator")
     {
-        LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
+        LLVMModuleSet::preProcessBCs(moduleNameVec);
     }
 
-    SVFModule* svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
-    SVFIRBuilder builder(svfModule);
+    LLVMModuleSet::buildSVFModule(moduleNameVec);
+    SVFIRBuilder builder;
     SVFIR* pag = builder.build();
+
 
     std::unique_ptr<LeakChecker> saber;
 
-    if(LEAKCHECKER())
+    if(Options::MemoryLeakCheck())
         saber = std::make_unique<LeakChecker>();
-    else if(FILECHECKER())
+    else if(Options::FileCheck())
         saber = std::make_unique<FileChecker>();
-    else if(DFREECHECKER())
+    else if(Options::DFreeCheck())
         saber = std::make_unique<DoubleFreeChecker>();
     else
         saber = std::make_unique<LeakChecker>();  // if no checker is specified, we use leak checker as the default one.
 
     saber->runOnModule(pag);
+    LLVMModuleSet::releaseLLVMModuleSet();
 
-    delete[] arg_value;
 
     return 0;
 

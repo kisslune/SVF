@@ -30,7 +30,6 @@
 #ifndef PATHALLOCATOR_H_
 #define PATHALLOCATOR_H_
 
-#include "SVFIR/SVFModule.h"
 #include "SVFIR/SVFValue.h"
 #include "Util/WorkList.h"
 #include "Graphs/SVFG.h"
@@ -49,13 +48,14 @@ class SaberCondAllocator
 public:
 
     typedef Z3Expr Condition;   /// z3 condition
-    typedef Map<u32_t, const SVFInstruction *> IndexToTermInstMap; /// id to instruction map for z3
+    typedef Map<u32_t, const ICFGNode*> IndexToTermInstMap; /// id to instruction map for z3
     typedef Map<u32_t,Condition> CondPosMap;		///< map a branch to its Condition
     typedef Map<const SVFBasicBlock*, CondPosMap > BBCondMap;	/// map bb to a Condition
     typedef Set<const SVFBasicBlock*> BasicBlockSet;
-    typedef Map<const SVFFunction*,  BasicBlockSet> FunToExitBBsMap;  ///< map a function to all its basic blocks calling program exit
+    typedef Map<const FunObjVar*,  BasicBlockSet> FunToExitBBsMap;  ///< map a function to all its basic blocks calling program exit
     typedef Map<const SVFBasicBlock*, Condition> BBToCondMap;	///< map a basic block to its condition during control-flow guard computation
     typedef FIFOWorkList<const SVFBasicBlock*> CFWorkList;	///< worklist for control-flow guard computation
+    typedef Map<const SVFGNode*, Set<const SVFGNode*>> SVFGNodeToSVFGNodeSetMap;
 
 
     /// Constructor
@@ -117,21 +117,21 @@ public:
     }
 
     /// Allocate a new condition
-    Condition newCond(const SVFInstruction* inst);
+    Condition newCond(const ICFGNode* inst);
 
     /// Perform path allocation
-    void allocate(const SVFModule* module);
+    void allocate();
 
     /// Get/Set instruction based on Z3 expression id
     //{@
-    inline const SVFInstruction* getCondInst(u32_t id) const
+    inline const ICFGNode* getCondInst(u32_t id) const
     {
         IndexToTermInstMap::const_iterator it = idToTermInstMap.find(id);
         assert(it != idToTermInstMap.end() && "this should be a fresh condition");
         return it->second;
     }
 
-    inline void setCondInst(const Condition &condition, const SVFInstruction* inst)
+    inline void setCondInst(const Condition &condition, const ICFGNode* inst)
     {
         assert(idToTermInstMap.find(condition.id()) == idToTermInstMap.end() && "this should be a fresh condition");
         idToTermInstMap[condition.id()] = inst;
@@ -145,8 +145,8 @@ public:
 
     inline bool postDominate(const SVFBasicBlock* bbKey, const SVFBasicBlock* bbValue) const
     {
-        const SVFFunction*  keyFunc = bbKey->getParent();
-        const SVFFunction*  valueFunc = bbValue->getParent();
+        const FunObjVar*  keyFunc = bbKey->getParent();
+        const FunObjVar*  valueFunc = bbValue->getParent();
         bool funcEq = (keyFunc == valueFunc);
         (void)funcEq; // Suppress warning of unused variable under release build
         assert(funcEq && "two basicblocks should be in the same function!");
@@ -155,8 +155,8 @@ public:
 
     inline bool dominate(const SVFBasicBlock* bbKey, const SVFBasicBlock* bbValue) const
     {
-        const SVFFunction*  keyFunc = bbKey->getParent();
-        const SVFFunction*  valueFunc = bbValue->getParent();
+        const FunObjVar*  keyFunc = bbKey->getParent();
+        const FunObjVar*  valueFunc = bbValue->getParent();
         bool funcEq = (keyFunc == valueFunc);
         (void)funcEq; // Suppress warning of unused variable under release build
         assert(funcEq && "two basicblocks should be in the same function!");
@@ -234,11 +234,17 @@ public:
 
 
     /// mark neg Z3 expression
-    inline void setNegCondInst(const Condition &condition, const SVFInstruction* inst)
+    inline void setNegCondInst(const Condition &condition, const ICFGNode* inst)
     {
         setCondInst(condition, inst);
         negConds.set(condition.id());
     }
+
+    SVFGNodeToSVFGNodeSetMap & getRemovedSUVFEdges()
+    {
+        return removedSUVFEdges;
+    }
+
 private:
 
     /// Allocate path condition for every basic block
@@ -255,7 +261,7 @@ private:
     //@}
     /// Evaluate branch conditions
     //@{
-    /// Evaluate the branch condtion
+    /// Evaluate the branch condition
     Condition evaluateBranchCond(const SVFBasicBlock*  bb, const SVFBasicBlock* succ) ;
     /// Evaluate loop exit branch
     Condition evaluateLoopExitBranch(const SVFBasicBlock*  bb, const SVFBasicBlock* succ);
@@ -275,9 +281,9 @@ private:
     /// Return true if the predicate of this compare instruction is not equal
     bool isNECmp(const CmpStmt* cmp) const;
     /// Return true if this is a test null expression
-    bool isTestNullExpr(const SVFValue* test) const;
+    bool isTestNullExpr(const ICFGNode* test) const;
     /// Return true if this is a test not null expression
-    bool isTestNotNullExpr(const SVFValue* test) const;
+    bool isTestNotNullExpr(const ICFGNode* test) const;
     /// Return true if two values on the predicate are what we want
     bool isTestContainsNullAndTheValue(const CmpStmt* cmp) const;
     //@}
@@ -299,6 +305,7 @@ private:
     NodeBS negConds;                        ///bit vector for distinguish neg
     std::vector<Condition> conditionVec;          /// vector storing z3expression
     static u32_t totalCondNum; /// a counter for fresh condition
+    SVFGNodeToSVFGNodeSetMap removedSUVFEdges;
 
 protected:
     BBCondMap bbConds;						///< map basic block to its successors/predecessors branch conditions

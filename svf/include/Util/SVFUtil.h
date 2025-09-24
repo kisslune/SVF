@@ -32,10 +32,12 @@
 
 #include "FastCluster/fastcluster.h"
 #include "SVFIR/SVFValue.h"
-#include "SVFIR/SVFModule.h"
+#include "Util/SVFLoopAndDomInfo.h"
 #include "Util/ExtAPI.h"
 #include "MemoryModel/PointsTo.h"
 #include <time.h>
+#include "Util/NodeIDAllocator.h"
+#include "Util/ThreadAPI.h"
 
 namespace SVF
 {
@@ -167,81 +169,50 @@ typedef OrderedSet<PointsTo, equalPointsTo> PointsToList;
 void dumpPointsToList(const PointsToList& ptl);
 
 /// Return true if it is an llvm intrinsic instruction
-bool isIntrinsicInst(const SVFInstruction* inst);
+bool isIntrinsicInst(const ICFGNode* inst);
 //@}
 
-/// Whether an instruction is a call or invoke instruction
-inline bool isCallSite(const SVFInstruction* inst)
-{
-    return SVFUtil::isa<SVFCallInst>(inst);
-}
-/// Whether an instruction is a call or invoke instruction
-inline bool isCallSite(const SVFValue* val)
-{
-    if(SVFUtil::isa<SVFCallInst>(val))
-        return true;
-    else
-        return false;
-}
+
+bool isCallSite(const ICFGNode* inst);
+
+bool isRetInstNode(const ICFGNode* node);
+
 
 /// Whether an instruction is a callsite in the application code, excluding llvm intrinsic calls
-inline bool isNonInstricCallSite(const SVFInstruction* inst)
+inline bool isNonInstricCallSite(const ICFGNode* inst)
 {
     if(isIntrinsicInst(inst))
         return false;
     return isCallSite(inst);
 }
 
-/// Return LLVM callsite given an instruction
-inline CallSite getSVFCallSite(const SVFInstruction* inst)
-{
-    assert(isCallSite(inst) && "not a callsite?");
-    CallSite cs(inst);
-    return cs;
-}
+/// Match arguments for callsite at caller and callee
+/// if the arg size does not match then we do not need to connect this parameter
+/// unless the callee is a variadic function (the first parameter of variadic function is its parameter number)
+bool matchArgs(const CallICFGNode* cs, const FunObjVar* callee);
 
-/// Return LLVM callsite given a value
-inline CallSite getSVFCallSite(const SVFValue* value)
-{
-    assert(isCallSite(value) && "not a callsite?");
-    const SVFCallInst* svfInst = SVFUtil::cast<SVFCallInst>(value);
-    CallSite cs(svfInst);
-    return cs;
-}
 
 /// Split into two substrings around the first occurrence of a separator string.
-inline std::vector<std::string> split(const std::string& s, char separator) {
+inline std::vector<std::string> split(const std::string& s, char separator)
+{
     std::vector<std::string> output;
     std::string::size_type prev_pos = 0, pos = 0;
-    while ((pos = s.find(separator, pos)) != std::string::npos) {
+    while ((pos = s.find(separator, pos)) != std::string::npos)
+    {
         std::string substring(s.substr(prev_pos, pos - prev_pos));
-        if (!substring.empty()) {
+        if (!substring.empty())
+        {
             output.push_back(substring);
         }
         prev_pos = ++pos;
     }
     std::string lastSubstring(s.substr(prev_pos, pos - prev_pos));
-    if (!lastSubstring.empty()) {
+    if (!lastSubstring.empty())
+    {
         output.push_back(lastSubstring);
     }
     return output;
 }
-
-/// Return callee of a callsite. Return null if this is an indirect call
-//@{
-inline const SVFFunction* getCallee(const CallSite cs)
-{
-    return cs.getCalledFunction();
-}
-
-inline const SVFFunction* getCallee(const SVFInstruction *inst)
-{
-    if (!isCallSite(inst))
-        return nullptr;
-    CallSite cs(inst);
-    return getCallee(cs);
-}
-//@}
 
 /// Given a map mapping points-to sets to a count, adds from into to.
 template <typename Data>
@@ -295,360 +266,154 @@ bool startAnalysisLimitTimer(unsigned timeLimit);
 void stopAnalysisLimitTimer(bool limitTimerSet);
 
 /// Return true if the call is an external call (external library in function summary table)
-/// If the libary function is redefined in the application code (e.g., memcpy), it will return false and will not be treated as an external call.
+/// If the library function is redefined in the application code (e.g., memcpy), it will return false and will not be treated as an external call.
 //@{
-inline bool isExtCall(const SVFFunction* fun)
-{
-    return fun && ExtAPI::getExtAPI()->is_ext(fun);
-}
+
+bool isExtCall(const FunObjVar* fun);
+
 
 /// Return true if the call is a heap allocator/reallocator
 //@{
 /// note that these two functions are not suppose to be used externally
-inline bool isHeapAllocExtFunViaRet(const SVFFunction* fun)
+
+inline bool isHeapAllocExtFunViaRet(const FunObjVar* fun)
 {
     return fun && (ExtAPI::getExtAPI()->is_alloc(fun)
                    || ExtAPI::getExtAPI()->is_realloc(fun));
 }
 
-inline bool isHeapAllocExtFunViaArg(const SVFFunction* fun)
+inline bool isHeapAllocExtFunViaArg(const FunObjVar* fun)
 {
     return fun && ExtAPI::getExtAPI()->is_arg_alloc(fun);
 }
 
 /// Get the position of argument that holds an allocated heap object.
 //@{
-inline int getHeapAllocHoldingArgPosition(const SVFFunction* fun)
+
+inline u32_t getHeapAllocHoldingArgPosition(const FunObjVar* fun)
 {
     return ExtAPI::getExtAPI()->get_alloc_arg_pos(fun);
 }
-
 /// Return true if the call is a heap reallocator
 //@{
 /// note that this function is not suppose to be used externally
-inline bool isReallocExtFun(const SVFFunction* fun)
+
+inline bool isReallocExtFun(const FunObjVar* fun)
 {
     return fun && (ExtAPI::getExtAPI()->is_realloc(fun));
-}
-
-/// Return true if the call is a heap dealloc or not
-//@{
-/// note that this function is not suppose to be used externally
-inline bool isDeallocExtFun(const SVFFunction* fun)
-{
-    return fun && (ExtAPI::getExtAPI()->is_dealloc(fun));
-}
-
-/// Return true if the call is a static global call
-//@{
-/// note that this function is not suppose to be used externally
-inline bool isStaticExtFun(const SVFFunction* fun)
-{
-    return fun && ExtAPI::getExtAPI()->has_static(fun);
 }
 
 /// Program entry function e.g. main
 //@{
 /// Return true if this is a program entry function (e.g. main)
-inline bool isProgEntryFunction(const SVFFunction* fun)
-{
-    return fun && fun->getName() == "main";
-}
 
-/// Get program entry function from module.
-inline const SVFFunction* getProgFunction(SVFModule* svfModule, const std::string& funName)
-{
-    for (SVFModule::const_iterator it = svfModule->begin(), eit = svfModule->end(); it != eit; ++it)
-    {
-        const SVFFunction *fun = *it;
-        if (fun->getName()==funName)
-            return fun;
-    }
-    return nullptr;
-}
+bool isProgEntryFunction(const FunObjVar*);
 
-/// Get program entry function from module.
-inline const SVFFunction* getProgEntryFunction(SVFModule* svfModule)
-{
-    for (SVFModule::const_iterator it = svfModule->begin(), eit = svfModule->end(); it != eit; ++it)
-    {
-        const SVFFunction *fun = *it;
-        if (isProgEntryFunction(fun))
-            return (fun);
-    }
-    return nullptr;
-}
+/// Get program entry function from function name.
+const FunObjVar* getProgFunction(const std::string& funName);
+
+/// Get program entry function.
+const FunObjVar*getProgEntryFunction();
+
 
 /// Return true if this is a program exit function call
 //@{
-inline bool isProgExitFunction (const SVFFunction * fun)
-{
-    return fun && (fun->getName() == "exit" ||
-                   fun->getName() == "__assert_rtn" ||
-                   fun->getName() == "__assert_fail" );
-}
+bool isProgExitFunction(const FunObjVar *fun);
 
-/// Return true if this argument belongs to an uncalled function
-inline bool isArgOfUncalledFunction(const SVFValue* svfval)
-{
-    if(const SVFArgument* arg = SVFUtil::dyn_cast<SVFArgument>(svfval))
-        return arg->isArgOfUncalledFunction();
-    else
-        return false;
-}
+
+
+bool isArgOfUncalledFunction(const SVFVar* svfvar);
+
+const ObjVar* getObjVarOfValVar(const ValVar* valVar);
 
 /// Return thread fork function
 //@{
-inline const SVFValue* getForkedFun(const CallSite cs)
-{
-    return ThreadAPI::getThreadAPI()->getForkedFun(cs);
-}
-inline const SVFValue* getForkedFun(const SVFInstruction *inst)
+inline const ValVar* getForkedFun(const CallICFGNode *inst)
 {
     return ThreadAPI::getThreadAPI()->getForkedFun(inst);
 }
 //@}
 
-/// This function servers a allocation wrapper detector
-inline bool isAnAllocationWraper(const SVFInstruction*)
-{
-    return false;
-}
 
-inline bool isExtCall(const CallSite cs)
-{
-    return isExtCall(getCallee(cs));
-}
+bool isExtCall(const CallICFGNode* cs);
 
-inline bool isExtCall(const SVFInstruction *inst)
-{
-    return isExtCall(getCallee(inst));
-}
+bool isExtCall(const ICFGNode* node);
 
-inline bool isHeapAllocExtCallViaArg(const CallSite cs)
-{
-    return isHeapAllocExtFunViaArg(getCallee(cs));
-}
+bool isHeapAllocExtCallViaArg(const CallICFGNode* cs);
 
-inline bool isHeapAllocExtCallViaArg(const SVFInstruction *inst)
-{
-    return isHeapAllocExtFunViaArg(getCallee(inst));
-}
 
 /// interfaces to be used externally
-inline bool isHeapAllocExtCallViaRet(const CallSite cs)
-{
-    bool isPtrTy = cs.getInstruction()->getType()->isPointerTy();
-    return isPtrTy && isHeapAllocExtFunViaRet(getCallee(cs));
-}
+bool isHeapAllocExtCallViaRet(const CallICFGNode* cs);
 
-inline bool isHeapAllocExtCallViaRet(const SVFInstruction *inst)
-{
-    bool isPtrTy = inst->getType()->isPointerTy();
-    return isPtrTy && isHeapAllocExtFunViaRet(getCallee(inst));
-}
+bool isHeapAllocExtCall(const ICFGNode* cs);
 
-inline bool isHeapAllocExtCall(const CallSite cs)
-{
-    return isHeapAllocExtCallViaRet(cs) || isHeapAllocExtCallViaArg(cs);
-}
-
-inline bool isHeapAllocExtCall(const SVFInstruction *inst)
-{
-    return isHeapAllocExtCallViaRet(inst) || isHeapAllocExtCallViaArg(inst);
-}
 //@}
 
-inline int getHeapAllocHoldingArgPosition(const CallSite cs)
-{
-    return getHeapAllocHoldingArgPosition(getCallee(cs));
-}
-
-inline int getHeapAllocHoldingArgPosition(const SVFInstruction *inst)
-{
-    return getHeapAllocHoldingArgPosition(getCallee(inst));
-}
+u32_t getHeapAllocHoldingArgPosition(const CallICFGNode* cs);
 //@}
 
-inline bool isReallocExtCall(const CallSite cs)
-{
-    bool isPtrTy = cs.getInstruction()->getType()->isPointerTy();
-    return isPtrTy && isReallocExtFun(getCallee(cs));
-}
-
-inline bool isReallocExtCall(const SVFInstruction *inst)
-{
-    bool isPtrTy = inst->getType()->isPointerTy();
-    return isPtrTy && isReallocExtFun(getCallee(inst));
-}
-//@}
-
-inline bool isDeallocExtCall(const CallSite cs)
-{
-    return isDeallocExtFun(getCallee(cs));
-}
-
-inline bool isDeallocExtCall(const SVFInstruction *inst)
-{
-    return isDeallocExtFun(getCallee(inst));
-}
-//@}
-
-inline bool isStaticExtCall(const CallSite cs)
-{
-    bool isPtrTy = cs.getInstruction()->getType()->isPointerTy();
-    return isPtrTy && isStaticExtFun(getCallee(cs));
-}
-
-inline bool isStaticExtCall(const SVFInstruction *inst)
-{
-    bool isPtrTy = inst->getType()->isPointerTy();
-    return isPtrTy && isStaticExtFun(getCallee(inst));
-}
-//@}
-
-/// Return true if the call is a static global call
-//@{
-inline bool isHeapAllocOrStaticExtCall(const CallSite cs)
-{
-    return isStaticExtCall(cs) || isHeapAllocExtCall(cs);
-}
-
-inline bool isHeapAllocOrStaticExtCall(const SVFInstruction *inst)
-{
-    return isStaticExtCall(inst) || isHeapAllocExtCall(inst);
-}
+bool isReallocExtCall(const CallICFGNode* cs);
 //@}
 
 /// Return true if this is a thread creation call
 ///@{
-inline bool isThreadForkCall(const CallSite cs)
-{
-    return ThreadAPI::getThreadAPI()->isTDFork(cs);
-}
-inline bool isThreadForkCall(const SVFInstruction *inst)
+inline bool isThreadForkCall(const CallICFGNode *inst)
 {
     return ThreadAPI::getThreadAPI()->isTDFork(inst);
 }
 //@}
 
-/// Return true if this is a hare_parallel_for call
-///@{
-inline bool isHareParForCall(const CallSite cs)
-{
-    return ThreadAPI::getThreadAPI()->isHareParFor(cs);
-}
-inline bool isHareParForCall(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->isHareParFor(inst);
-}
-//@}
-
 /// Return true if this is a thread join call
 ///@{
-inline bool isThreadJoinCall(const CallSite cs)
+inline bool isThreadJoinCall(const CallICFGNode* cs)
 {
     return ThreadAPI::getThreadAPI()->isTDJoin(cs);
-}
-inline bool isThreadJoinCall(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->isTDJoin(inst);
 }
 //@}
 
 /// Return true if this is a thread exit call
 ///@{
-inline bool isThreadExitCall(const CallSite cs)
+inline bool isThreadExitCall(const CallICFGNode* cs)
 {
     return ThreadAPI::getThreadAPI()->isTDExit(cs);
 }
-inline bool isThreadExitCall(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->isTDExit(inst);
-}
 //@}
 
 /// Return true if this is a lock acquire call
 ///@{
-inline bool isLockAquireCall(const CallSite cs)
+inline bool isLockAquireCall(const CallICFGNode* cs)
 {
     return ThreadAPI::getThreadAPI()->isTDAcquire(cs);
 }
-inline bool isLockAquireCall(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->isTDAcquire(inst);
-}
 //@}
 
 /// Return true if this is a lock acquire call
 ///@{
-inline bool isLockReleaseCall(const CallSite cs)
+inline bool isLockReleaseCall(const CallICFGNode* cs)
 {
     return ThreadAPI::getThreadAPI()->isTDRelease(cs);
-}
-inline bool isLockReleaseCall(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->isTDRelease(inst);
 }
 //@}
 
 /// Return true if this is a barrier wait call
 //@{
-inline bool isBarrierWaitCall(const CallSite cs)
+inline bool isBarrierWaitCall(const CallICFGNode* cs)
 {
     return ThreadAPI::getThreadAPI()->isTDBarWait(cs);
-}
-inline bool isBarrierWaitCall(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->isTDBarWait(inst);
 }
 //@}
 
 /// Return sole argument of the thread routine
 //@{
-inline const SVFValue* getActualParmAtForkSite(const CallSite cs)
+inline const ValVar* getActualParmAtForkSite(const CallICFGNode* cs)
 {
     return ThreadAPI::getThreadAPI()->getActualParmAtForkSite(cs);
 }
-inline const SVFValue* getActualParmAtForkSite(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->getActualParmAtForkSite(inst);
-}
 //@}
 
-/// Return the task function of the parallel_for routine
-//@{
-inline const SVFValue* getTaskFuncAtHareParForSite(const CallSite cs)
-{
-    return ThreadAPI::getThreadAPI()->getTaskFuncAtHareParForSite(cs);
-}
-inline const SVFValue* getTaskFuncAtHareParForSite(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->getTaskFuncAtHareParForSite(inst);
-}
-//@}
 
-/// Return the task data argument of the parallel_for rountine
-//@{
-inline const SVFValue* getTaskDataAtHareParForSite(const CallSite cs)
-{
-    return ThreadAPI::getThreadAPI()->getTaskDataAtHareParForSite(cs);
-}
-inline const SVFValue* getTaskDataAtHareParForSite(const SVFInstruction *inst)
-{
-    return ThreadAPI::getThreadAPI()->getTaskDataAtHareParForSite(inst);
-}
-//@}
+bool isProgExitCall(const CallICFGNode* cs);
 
-inline bool isProgExitCall(const CallSite cs)
-{
-    return isProgExitFunction(getCallee(cs));
-}
-
-inline bool isProgExitCall(const SVFInstruction *inst)
-{
-    return isProgExitFunction(getCallee(inst));
-}
 
 template<typename T>
 constexpr typename std::remove_reference<T>::type &&
@@ -656,6 +421,55 @@ move(T &&t) noexcept
 {
     return std::move(t);
 }
+
+/// void_t is not available until C++17. We define it here for C++11/14.
+template <typename... Ts> struct make_void
+{
+    typedef void type;
+};
+template <typename... Ts> using void_t = typename make_void<Ts...>::type;
+
+/// @brief Type trait that checks if a type is iterable
+/// (can be applied on a range-based for loop)
+///@{
+template <typename T, typename = void> struct is_iterable : std::false_type {};
+template <typename T>
+struct is_iterable<T, void_t<decltype(std::begin(std::declval<T&>()) !=
+                                      std::end(std::declval<T&>()))>>
+: std::true_type {};
+template <typename T> constexpr bool is_iterable_v = is_iterable<T>::value;
+///@}
+
+/// @brief Type trait to check if a type is a map or unordered_map.
+///@{
+template <typename T> struct is_map : std::false_type {};
+template <typename... Ts> struct is_map<std::map<Ts...>> : std::true_type {};
+template <typename... Ts>
+struct is_map<std::unordered_map<Ts...>> : std::true_type {};
+template <typename... Ts> constexpr bool is_map_v = is_map<Ts...>::value;
+///@}
+
+/// @brief Type trait to check if a type is a set or unordered_set.
+///@{
+template <typename T> struct is_set : std::false_type {};
+template <typename... Ts> struct is_set<std::set<Ts...>> : std::true_type {};
+template <typename... Ts>
+struct is_set<std::unordered_set<Ts...>> : std::true_type {};
+template <typename... Ts> constexpr bool is_set_v = is_set<Ts...>::value;
+///@}
+
+/// @brief Type trait to check if a type is vector or list.
+template <typename T> struct is_sequence_container : std::false_type {};
+template <typename... Ts>
+struct is_sequence_container<std::vector<Ts...>> : std::true_type {};
+template <typename... Ts>
+struct is_sequence_container<std::deque<Ts...>> : std::true_type {};
+template <typename... Ts>
+struct is_sequence_container<std::list<Ts...>> : std::true_type {};
+template <typename... Ts>
+constexpr bool is_sequence_container_v = is_sequence_container<Ts...>::value;
+///@}
+
 
 } // End namespace SVFUtil
 

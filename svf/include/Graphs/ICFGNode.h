@@ -53,14 +53,10 @@ typedef GenericNode<ICFGNode, ICFGEdge> GenericICFGNodeTy;
 
 class ICFGNode : public GenericICFGNodeTy
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
 public:
-    /// 22 kinds of ICFG node
-    /// Gep represents offset edge for field sensitivity
-    enum ICFGNodeK
-    {
-        IntraBlock, FunEntryBlock, FunExitBlock, FunCallBlock, FunRetBlock, GlobalBlock
-    };
 
     typedef ICFGEdge::ICFGEdgeSetTy::iterator iterator;
     typedef ICFGEdge::ICFGEdgeSetTy::const_iterator const_iterator;
@@ -68,21 +64,21 @@ public:
     typedef Set<const RetPE *> RetPESet;
     typedef std::list<const VFGNode*> VFGNodeList;
     typedef std::list<const SVFStmt*> SVFStmtList;
+    typedef GNodeK ICFGNodeK;
 
 public:
     /// Constructor
-    ICFGNode(NodeID i, ICFGNodeK k) : GenericICFGNodeTy(i, k), fun(nullptr), bb(nullptr)
+    ICFGNode(NodeID i, GNodeK k) : GenericICFGNodeTy(i, k), fun(nullptr), bb(nullptr)
     {
-
     }
 
     /// Return the function of this ICFGNode
-    virtual const SVFFunction* getFun() const
+    virtual const FunObjVar* getFun() const
     {
         return fun;
     }
 
-    /// Return the function of this ICFGNode
+    /// Return the basic block of this ICFGNode
     virtual const SVFBasicBlock* getBB() const
     {
         return bb;
@@ -126,10 +122,30 @@ public:
 
     virtual const std::string toString() const;
 
+
+
     void dump() const;
 
+
+    static inline bool classof(const ICFGNode *)
+    {
+        return true;
+    }
+
+    static inline bool classof(const GenericICFGNodeTy* node)
+    {
+        return isICFGNodeKinds(node->getNodeKind());
+    }
+
+    static inline bool classof(const SVFValue* node)
+    {
+        return isICFGNodeKinds(node->getNodeKind());
+    }
+
+
+
 protected:
-    const SVFFunction* fun;
+    const FunObjVar* fun;
     const SVFBasicBlock* bb;
     VFGNodeList VFGNodes; //< a list of VFGNodes
     SVFStmtList pagEdges; //< a list of PAGEdges
@@ -145,7 +161,6 @@ class GlobalICFGNode : public ICFGNode
 public:
     GlobalICFGNode(NodeID id) : ICFGNode(id, GlobalBlock)
     {
-        bb = nullptr;
     }
 
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -166,7 +181,12 @@ public:
     }
     //@}
 
-    virtual const std::string toString() const;
+    const std::string toString() const override;
+
+    const std::string getSourceLoc() const override
+    {
+        return "Global ICFGNode";
+    }
 };
 
 /*!
@@ -174,19 +194,19 @@ public:
  */
 class IntraICFGNode : public ICFGNode
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 private:
-    const SVFInstruction *inst;
+    bool isRet;
+
+    /// Constructor to create empty IntraICFGNode (for SVFIRReader/deserialization)
+    IntraICFGNode(NodeID id) : ICFGNode(id, IntraBlock), isRet(false) {}
 
 public:
-    IntraICFGNode(NodeID id, const SVFInstruction *i) : ICFGNode(id, IntraBlock), inst(i)
+    IntraICFGNode(NodeID id, const SVFBasicBlock* b, bool isReturn) : ICFGNode(id, IntraBlock), isRet(isReturn)
     {
-        fun = inst->getFunction();
-        bb = inst->getParent();
-    }
-
-    inline const SVFInstruction *getInst() const
-    {
-        return inst;
+        fun = b->getFunction();
+        bb = b;
     }
 
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -207,7 +227,12 @@ public:
     }
     //@}
 
-    const std::string toString() const;
+    const std::string toString() const override;
+
+    inline bool isRetInst() const
+    {
+        return isRet;
+    }
 };
 
 class InterICFGNode : public ICFGNode
@@ -226,23 +251,25 @@ public:
         return true;
     }
 
-    static inline bool classof(const ICFGNode *node)
+    static inline bool classof(const ICFGNode* node)
     {
-        return node->getNodeKind() == FunEntryBlock
-               || node->getNodeKind() == FunExitBlock
-               || node->getNodeKind() == FunCallBlock
-               || node->getNodeKind() == FunRetBlock;
+        return isInterICFGNodeKind(node->getNodeKind());
     }
 
-    static inline bool classof(const GenericICFGNodeTy *node)
+    static inline bool classof(const GenericICFGNodeTy* node)
     {
-        return node->getNodeKind() == FunEntryBlock
-               || node->getNodeKind() == FunExitBlock
-               || node->getNodeKind() == FunCallBlock
-               || node->getNodeKind() == FunRetBlock;
+        return isInterICFGNodeKind(node->getNodeKind());
     }
+
+    static inline bool classof(const SVFValue* node)
+    {
+        return isInterICFGNodeKind(node->getNodeKind());
+    }
+
     //@}
 };
+
+
 
 
 /*!
@@ -250,16 +277,22 @@ public:
  */
 class FunEntryICFGNode : public InterICFGNode
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
 public:
     typedef std::vector<const SVFVar *> FormalParmNodeVec;
 private:
     FormalParmNodeVec FPNodes;
+
+    /// Constructor to create empty FunEntryICFGNode (for SVFIRReader/deserialization)
+    FunEntryICFGNode(NodeID id) : InterICFGNode(id, FunEntryBlock) {}
+
 public:
-    FunEntryICFGNode(NodeID id, const SVFFunction* f);
+    FunEntryICFGNode(NodeID id, const FunObjVar* f);
 
     /// Return function
-    inline const SVFFunction* getFun() const
+    inline const FunObjVar* getFun() const override
     {
         return fun;
     }
@@ -297,9 +330,16 @@ public:
     {
         return node->getNodeKind() == FunEntryBlock;
     }
+
+    static inline bool classof(const SVFValue*node)
+    {
+        return node->getNodeKind() == FunEntryBlock;
+    }
     //@}
 
-    const virtual std::string toString() const;
+    const std::string toString() const override;
+
+    const std::string getSourceLoc() const override;
 };
 
 /*!
@@ -307,25 +347,31 @@ public:
  */
 class FunExitICFGNode : public InterICFGNode
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
 private:
     const SVFVar *formalRet;
+
+    /// Constructor to create empty FunExitICFGNode (for SVFIRReader/deserialization)
+    FunExitICFGNode(NodeID id) : InterICFGNode(id, FunExitBlock), formalRet{} {}
+
 public:
-    FunExitICFGNode(NodeID id, const SVFFunction* f);
+    FunExitICFGNode(NodeID id, const FunObjVar* f);
 
     /// Return function
-    inline const SVFFunction* getFun() const
+    inline const FunObjVar* getFun() const override
     {
         return fun;
     }
 
-    /// Return actual return parameter
+    /// Return formal return parameter
     inline const SVFVar *getFormalRet() const
     {
         return formalRet;
     }
 
-    /// Add actual return parameter
+    /// Add formal return parameter
     inline void addFormalRet(const SVFVar *fr)
     {
         formalRet = fr;
@@ -352,9 +398,16 @@ public:
     {
         return node->getNodeKind() == FunExitBlock;
     }
+
+    static inline bool classof(const SVFValue*node)
+    {
+        return node->getNodeKind() == FunExitBlock;
+    }
     //@}
 
-    virtual const std::string toString() const;
+    const std::string toString() const override;
+
+    const std::string getSourceLoc() const override;
 };
 
 /*!
@@ -362,24 +415,36 @@ public:
  */
 class CallICFGNode : public InterICFGNode
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
 public:
-    typedef std::vector<const SVFVar *> ActualParmNodeVec;
-private:
-    const SVFInstruction* cs;
+    typedef std::vector<const ValVar *> ActualParmNodeVec;
+
+protected:
     const RetICFGNode* ret;
-    ActualParmNodeVec APNodes;
-public:
-    CallICFGNode(NodeID id, const SVFInstruction* c) : InterICFGNode(id, FunCallBlock), cs(c), ret(nullptr)
-    {
-        fun = cs->getFunction();
-        bb = cs->getParent();
-    }
+    ActualParmNodeVec APNodes;      /// arguments
+    const FunObjVar* calledFunc;  /// called function
+    bool isvararg;                  /// is variable argument
+    bool isVirCallInst;             /// is virtual call inst
+    SVFVar* vtabPtr;                /// virtual table pointer
+    s32_t virtualFunIdx;            /// virtual function index of the virtual table(s) at a virtual call
+    std::string funNameOfVcall;     /// the function name of this virtual call
 
-    /// Return callsite
-    inline const SVFInstruction* getCallSite() const
+    /// Constructor to create empty CallICFGNode (for SVFIRReader/deserialization)
+    CallICFGNode(NodeID id) : InterICFGNode(id, FunCallBlock), ret{} {}
+
+public:
+    CallICFGNode(NodeID id, const SVFBasicBlock* b, const SVFType* ty,
+                 const FunObjVar* cf, bool iv, bool ivc, s32_t vfi,
+                 const std::string& fnv)
+        : InterICFGNode(id, FunCallBlock), ret(nullptr), calledFunc(cf),
+          isvararg(iv), isVirCallInst(ivc), vtabPtr(nullptr),
+          virtualFunIdx(vfi), funNameOfVcall(fnv)
     {
-        return cs;
+        fun = b->getFunction();
+        bb = b;
+        type = ty;
     }
 
     /// Return callsite
@@ -396,21 +461,21 @@ public:
     }
 
     /// Return callsite
-    inline const SVFFunction* getCaller() const
+    inline const FunObjVar* getCaller() const
     {
-        return cs->getFunction();
+        return getFun();
     }
 
     /// Return Basic Block
     inline const SVFBasicBlock* getParent() const
     {
-        return cs->getParent();
+        return getBB();
     }
 
     /// Return true if this is an indirect call
     inline bool isIndirectCall() const
     {
-        return nullptr == SVFUtil::getCallee(cs);
+        return nullptr == calledFunc;
     }
 
     /// Return the set of actual parameters
@@ -420,10 +485,69 @@ public:
     }
 
     /// Add actual parameters
-    inline void addActualParms(const SVFVar *ap)
+    inline void addActualParms(const ValVar *ap)
     {
         APNodes.push_back(ap);
     }
+    /// Parameter operations
+    //@{
+    inline const ValVar* getArgument(u32_t ArgNo) const
+    {
+        return getActualParms()[ArgNo];
+    }
+
+    inline u32_t arg_size() const
+    {
+        return APNodes.size();
+    }
+    inline bool arg_empty() const
+    {
+        return APNodes.empty();
+    }
+
+    inline u32_t getNumArgOperands() const
+    {
+        return arg_size();
+    }
+    inline const FunObjVar* getCalledFunction() const
+    {
+        return calledFunc;
+    }
+
+    inline bool isVarArg() const
+    {
+        return isvararg;
+    }
+    inline bool isVirtualCall() const
+    {
+        return isVirCallInst;
+    }
+
+    inline void setVtablePtr(SVFVar* v)
+    {
+        vtabPtr = v;
+    }
+
+    inline const SVFVar* getVtablePtr() const
+    {
+        assert(isVirtualCall() && "not a virtual call?");
+        return vtabPtr;
+    }
+
+
+    inline s32_t getFunIdxInVtable() const
+    {
+        assert(isVirtualCall() && "not a virtual call?");
+        assert(virtualFunIdx >=0 && "virtual function idx is less than 0? not set yet?");
+        return virtualFunIdx;
+    }
+
+    inline const std::string& getFunNameOfVirtualCall() const
+    {
+        assert(isVirtualCall() && "not a virtual call?");
+        return funNameOfVcall;
+    }
+    //@}
 
     ///Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
@@ -446,9 +570,19 @@ public:
     {
         return node->getNodeKind() == FunCallBlock;
     }
+
+    static inline bool classof(const SVFValue*node)
+    {
+        return node->getNodeKind() == FunCallBlock;
+    }
     //@}
 
-    virtual const std::string toString() const;
+    const std::string toString() const override;
+
+    const std::string getSourceLoc() const override
+    {
+        return "CallICFGNode: " + ICFGNode::getSourceLoc();
+    }
 };
 
 
@@ -457,23 +591,26 @@ public:
  */
 class RetICFGNode : public InterICFGNode
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
 private:
-    const SVFInstruction* cs;
     const SVFVar *actualRet;
     const CallICFGNode* callBlockNode;
-public:
-    RetICFGNode(NodeID id, const SVFInstruction* c, CallICFGNode* cb) :
-        InterICFGNode(id, FunRetBlock), cs(c), actualRet(nullptr), callBlockNode(cb)
+
+    /// Constructor to create empty RetICFGNode (for SVFIRReader/deserialization)
+    RetICFGNode(NodeID id)
+        : InterICFGNode(id, FunRetBlock), actualRet{}, callBlockNode{}
     {
-        fun = cs->getFunction();
-        bb = cs->getParent();
     }
 
-    /// Return callsite
-    inline const SVFInstruction* getCallSite() const
+public:
+    RetICFGNode(NodeID id, CallICFGNode* cb) :
+        InterICFGNode(id, FunRetBlock), actualRet(nullptr), callBlockNode(cb)
     {
-        return cs;
+        fun = cb->getFun();
+        bb = cb->getBB();
+        type = cb->getType();
     }
 
     inline const CallICFGNode* getCallICFGNode() const
@@ -513,9 +650,18 @@ public:
     {
         return node->getNodeKind() == FunRetBlock;
     }
+    static inline bool classof(const SVFValue*node)
+    {
+        return node->getNodeKind() == FunRetBlock;
+    }
     //@}
 
-    virtual const std::string toString() const;
+    const std::string toString() const override;
+
+    const std::string getSourceLoc() const override
+    {
+        return "RetICFGNode: " + ICFGNode::getSourceLoc();
+    }
 };
 
 } // End namespace SVF

@@ -25,8 +25,7 @@
 #include "MTA/MTA.h"
 #include "Util/CommandLine.h"
 #include "Util/Options.h"
-#include "MTAResultValidator.h"
-#include "LockResultValidator.h"
+
 using namespace llvm;
 using namespace std;
 using namespace SVF;
@@ -34,7 +33,6 @@ using namespace SVF;
 int main(int argc, char ** argv)
 {
 
-    char **arg_value = new char*[argc];
     std::vector<std::string> moduleNameVec;
     moduleNameVec = OptionBase::parseOptions(
                         argc, argv, "MTA Analysis", "[options] <input-bitcode...>"
@@ -42,24 +40,19 @@ int main(int argc, char ** argv)
 
     if (Options::WriteAnder() == "ir_annotator")
     {
-        LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
+        LLVMModuleSet::preProcessBCs(moduleNameVec);
     }
 
-    SVFModule* svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
-    SVFIRBuilder builder(svfModule);
+    LLVMModuleSet::buildSVFModule(moduleNameVec);
+    SVFIRBuilder builder;
     SVFIR* pag = builder.build();
+
 
     MTA mta;
     mta.runOnModule(pag);
 
-    MTAResultValidator MTAValidator(mta.getMHP());
-    MTAValidator.analyze();
+    LLVMModuleSet::releaseLLVMModuleSet();
 
-    // Initialize the validator and perform validation.
-    LockResultValidator lockvalidator(mta.getLockAnalysis());
-    lockvalidator.analyze();
-
-    delete[] arg_value;
 
     return 0;
 }

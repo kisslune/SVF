@@ -62,7 +62,7 @@ public:
     {
         if (scdAndersen == nullptr)
         {
-            new AndersenSCD(_pag);
+            scdAndersen = new AndersenSCD(_pag);
             scdAndersen->analyze();
             return scdAndersen;
         }
@@ -124,7 +124,7 @@ public:
     {
         if (sfrAndersen == nullptr)
         {
-            new AndersenSFR(_pag);
+            sfrAndersen = new AndersenSFR(_pag);
             sfrAndersen->analyze();
             return sfrAndersen;
         }
@@ -149,7 +149,7 @@ public:
 protected:
     void initialize();
     void PWCDetect();
-    void fieldExpand(NodeSet& initials, s32_t offset, NodeBS& strides, PointsTo& expandPts);
+    void fieldExpand(NodeSet& initials, APOffset offset, NodeBS& strides, PointsTo& expandPts);
     bool processGepPts(const PointsTo& pts, const GepCGEdge* edge);
     bool mergeSrcToTgt(NodeID nodeId, NodeID newRepId);
 

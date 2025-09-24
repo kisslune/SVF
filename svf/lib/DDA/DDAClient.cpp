@@ -81,11 +81,11 @@ OrderedNodeSet& FunptrDDAClient::collectCandidateQueries(SVFIR* p)
     for(SVFIR::CallSiteToFunPtrMap::const_iterator it = pag->getIndirectCallsites().begin(),
             eit = pag->getIndirectCallsites().end(); it!=eit; ++it)
     {
-        if (SVFUtil::getSVFCallSite(it->first->getCallSite()).isVirtualCall())
+        if (it->first->isVirtualCall())
         {
-            const SVFValue* vtblPtr = SVFUtil::getSVFCallSite(it->first->getCallSite()).getVtablePtr();
-            assert(pag->hasValueNode(vtblPtr) && "not a vtable pointer?");
-            NodeID vtblId = pag->getValueNode(vtblPtr);
+            const SVFVar* vtblPtr = it->first->getVtablePtr();
+            assert(vtblPtr != nullptr && "not a vtable pointer?");
+            NodeID vtblId = vtblPtr->getId();
             addCandidate(vtblId);
             vtableToCallSiteMap[vtblId] = it->first;
         }
@@ -115,7 +115,7 @@ void FunptrDDAClient::performStat(PointerAnalysis* pta)
         const PointsTo& ddaPts = pta->getPts(vtptr);
         const PointsTo& anderPts = ander->getPts(vtptr);
 
-        PTACallGraph* callgraph = ander->getPTACallGraph();
+        CallGraph* callgraph = ander->getCallGraph();
         const CallICFGNode* cbn = nIter->second;
 
         if(!callgraph->hasIndCSCallees(cbn))
@@ -124,7 +124,7 @@ void FunptrDDAClient::performStat(PointerAnalysis* pta)
             continue;
         }
 
-        const PTACallGraph::FunctionSet& callees = callgraph->getIndCSCallees(cbn);
+        const CallGraph::FunctionSet& callees = callgraph->getIndCSCallees(cbn);
         totalCallsites++;
         if(callees.size() == 0)
             zeroTargetCallsites++;
@@ -138,15 +138,15 @@ void FunptrDDAClient::performStat(PointerAnalysis* pta)
         if(ddaPts.count() >= anderPts.count() || ddaPts.empty())
             continue;
 
-        Set<const SVFFunction*> ander_vfns;
-        Set<const SVFFunction*> dda_vfns;
+        Set<const FunObjVar*> ander_vfns;
+        Set<const FunObjVar*> dda_vfns;
         ander->getVFnsFromPts(cbn,anderPts, ander_vfns);
         pta->getVFnsFromPts(cbn,ddaPts, dda_vfns);
 
         ++morePreciseCallsites;
         outs() << "============more precise callsite =================\n";
-        outs() << (nIter->second)->getCallSite()->toString() << "\n";
-        outs() << (nIter->second)->getCallSite()->getSourceLoc() << "\n";
+        outs() << (nIter->second)->toString() << "\n";
+        outs() << (nIter->second)->getSourceLoc() << "\n";
         outs() << "\n";
         outs() << "------ander pts or vtable num---(" << anderPts.count()  << ")--\n";
         outs() << "------DDA vfn num---(" << ander_vfns.size() << ")--\n";
@@ -162,7 +162,7 @@ void FunptrDDAClient::performStat(PointerAnalysis* pta)
     outs() << "=================================================\n";
     outs() << "Total virtual callsites: " << vtableToCallSiteMap.size() << "\n";
     outs() << "Total analyzed virtual callsites: " << totalCallsites << "\n";
-    outs() << "Indirect call map size: " << ander->getPTACallGraph()->getIndCallMap().size() << "\n";
+    outs() << "Indirect call map size: " << ander->getCallGraph()->getIndCallMap().size() << "\n";
     outs() << "Precise callsites: " << morePreciseCallsites << "\n";
     outs() << "Zero target callsites: " << zeroTargetCallsites << "\n";
     outs() << "One target callsites: " << oneTargetCallsites << "\n";
@@ -213,17 +213,12 @@ void AliasDDAClient::performStat(PointerAnalysis* pta)
         {
             const PAGNode* node1 = *lit;
             const PAGNode* node2 = *sit;
-            if(node1->hasValue() && node2->hasValue())
-            {
-                AliasResult result = pta->alias(node1->getId(),node2->getId());
-
-                outs() << "\n=================================================\n";
-                outs() << "Alias Query for (" << node1->getValue()->toString() << ",";
-                outs() << node2->getValue()->toString() << ") \n";
-                outs() << "[NodeID:" << node1->getId() <<  ", NodeID:" << node2->getId() << " " << result << "]\n";
-                outs() << "=================================================\n";
-
-            }
+            AliasResult result = pta->alias(node1->getId(), node2->getId());
+            outs() << "\n=================================================\n";
+            outs() << "Alias Query for (" << node1->valueOnlyToString() << ",";
+            outs() << node2->valueOnlyToString() << ") \n";
+            outs() << "[NodeID:" << node1->getId() << ", NodeID:" << node2->getId() << " " << result << "]\n";
+            outs() << "=================================================\n";
         }
     }
 }

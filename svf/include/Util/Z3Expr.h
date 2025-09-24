@@ -44,8 +44,7 @@ public:
 private:
     z3::expr e;
 
-    Z3Expr(float f); // placeholder don't support floating point expression
-    Z3Expr(double f); // placeholder don't support floating point expression
+
 
 public:
 
@@ -62,6 +61,14 @@ public:
     }
 
     Z3Expr(const Z3Expr &z3Expr) : e(z3Expr.getExpr())
+    {
+    }
+
+    Z3Expr(float f) : Z3Expr((double) f)
+    {
+    }
+
+    Z3Expr(double f): e(getContext().real_val(std::to_string(f).c_str()))
     {
     }
 
@@ -261,7 +268,7 @@ public:
 
     friend bool eq(const Z3Expr &lhs, const Z3Expr &rhs)
     {
-        return eq(lhs.getExpr(), rhs.getExpr());
+        return eq(lhs.getExpr().simplify(), rhs.getExpr().simplify());
     }
 
     z3::sort get_sort() const
@@ -293,7 +300,7 @@ public:
     /// compute NEG
     static inline Z3Expr NEG(const Z3Expr &z3Expr)
     {
-        return !z3Expr;
+        return (!z3Expr).simplify();
     }
 
     /// compute AND, used for branch condition

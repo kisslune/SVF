@@ -52,7 +52,7 @@ public:
     typedef FIFOWorkList<NodeID> WorkList;
 
 protected:
-    SVFIR*pag;
+    SVFIR* pag;
     NodeToRepMap nodeToRepMap;
     NodeToSubsMap nodeToSubsMap;
     WorkList nodesToBeCollapsed;
@@ -67,24 +67,21 @@ protected:
 
     void destroy();
 
+    void clearSolitaries();  // remove nodes that are neither pointers nor connected with any edge
+
     SVFStmt::SVFStmtSetTy& getPAGEdgeSet(SVFStmt::PEDGEK kind)
     {
         return pag->getPTASVFStmtSet(kind);
     }
 
-    /// Wappers used internally, not expose to Andernsen Pass
+    /// Wrappers used internally, not expose to Andersen Pass
     //@{
-    inline NodeID getValueNode(const SVFValue* value) const
-    {
-        return sccRepNode(pag->getValueNode(value));
-    }
-
-    inline NodeID getReturnNode(const SVFFunction* value) const
+    inline NodeID getReturnNode(const FunObjVar* value) const
     {
         return pag->getReturnNode(value);
     }
 
-    inline NodeID getVarargNode(const SVFFunction* value) const
+    inline NodeID getVarargNode(const FunObjVar* value) const
     {
         return pag->getVarargNode(value);
     }
@@ -180,7 +177,7 @@ public:
     /// Add Copy edge
     CopyCGEdge* addCopyCGEdge(NodeID src, NodeID dst);
     /// Add Gep edge
-    NormalGepCGEdge*  addNormalGepCGEdge(NodeID src, NodeID dst, const LocationSet& ls);
+    NormalGepCGEdge* addNormalGepCGEdge(NodeID src, NodeID dst, const AccessPath& ap);
     VariantGepCGEdge* addVariantGepCGEdge(NodeID src, NodeID dst);
     /// Add Load edge
     LoadCGEdge* addLoadCGEdge(NodeID src, NodeID dst);
@@ -214,9 +211,9 @@ public:
 
     /// Used for cycle elimination
     //@{
-    /// Remove edge from old dst target, change edge dst id and add modifed edge into new dst
+    /// Remove edge from old dst target, change edge dst id and add modified edge into new dst
     void reTargetDstOfEdge(ConstraintEdge* edge, ConstraintNode* newDstNode);
-    /// Remove edge from old src target, change edge dst id and add modifed edge into new src
+    /// Remove edge from old src target, change edge dst id and add modified edge into new src
     void reTargetSrcOfEdge(ConstraintEdge* edge, ConstraintNode* newSrcNode);
     /// Remove addr edge from their src and dst edge sets
     void removeAddrEdge(AddrCGEdge* edge);
@@ -321,13 +318,13 @@ public:
     }
     inline bool isSingleFieldObj(NodeID id) const
     {
-        const MemObj* mem = pag->getBaseObj(id);
-        return (mem->getMaxFieldOffsetLimit() == 1);
+        const BaseObjVar* baseObj = pag->getBaseObject(id);
+        return (baseObj->getMaxFieldOffsetLimit() == 1);
     }
     /// Get a field of a memory object
-    inline NodeID getGepObjVar(NodeID id, const LocationSet& ls)
+    inline NodeID getGepObjVar(NodeID id, const APOffset& apOffset)
     {
-        NodeID gep =  pag->getGepObjVar(id,ls);
+        NodeID gep =  pag->getGepObjVar(id, apOffset);
         /// Create a node when it is (1) not exist on graph and (2) not merged
         if(sccRepNode(gep)==gep && hasConstraintNode(gep)==false)
             addConstraintNode(new ConstraintNode(gep),gep);
@@ -380,10 +377,7 @@ public:
     void view();
 };
 
-} // End namespace SVF
 
-namespace SVF
-{
 /* !
  * GenericGraphTraits specializations for the generic graph algorithms.
  * Provide graph traits for traversing from a constraint node using standard graph traversals.
@@ -403,6 +397,6 @@ template<> struct GenericGraphTraits<SVF::ConstraintGraph*> : public GenericGrap
     typedef SVF::ConstraintNode *NodeRef;
 };
 
-} // End namespace llvm
+} // End namespace SVF
 
 #endif /* CONSG_H_ */

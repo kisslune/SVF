@@ -1,26 +1,33 @@
-# Due to a mutual dependencies, all the sub projects of the SVG are merged here
-# Otherwise it is impossible to load the dependencies in opt. 
-# NOTE: if the SVF should be linked into opt, we should probably use the 
-# individual sub projects here, rather than the combined project.
+# Define the core library
+add_library(SvfCore)
 
-file(
-  GLOB
-  SVF_CORE_SOURCES
-  lib/AbstractExecution/*.cpp
-  lib/CFL/*.cpp
-  lib/DDA/*.cpp
-  lib/FastCluster/*.cpp
-  lib/Graphs/*.cpp
-  lib/MemoryModel/*.cpp
-  lib/MSSA/*.cpp
-  lib/MTA/*.cpp
-  lib/SABER/*.cpp
-  lib/SVFIR/*.cpp
-  lib/Util/*.cpp
-  lib/WPA/*.cpp)
+# Inherit compiler & linker options by publically linking against the interface library
+target_link_libraries(SvfCore PUBLIC SvfFlags)
 
-# Refer to this link for detail:
-# https://stackoverflow.com/questions/68864536/cmake-linking-static-libraries-in-different-subdirectories-into-one-single-stati
-add_library(SvfCoreObj OBJECT ${SVF_CORE_SOURCES})
-add_library(SvfCore STATIC)
-target_link_libraries(SvfCore PUBLIC ${Z3_LIBRARIES} SvfCoreObj)
+# Gather & set all of the core library's source files by globbing all .h and .cpp files (recursively)
+file(GLOB_RECURSE SVF_CORE_HEADERS ${CMAKE_CURRENT_LIST_DIR}/include/*.h)
+file(GLOB_RECURSE SVF_CORE_SOURCES ${CMAKE_CURRENT_LIST_DIR}/lib/*.cpp)
+target_sources(
+  SvfCore
+  PUBLIC FILE_SET HEADERS
+                  BASE_DIRS ${CMAKE_CURRENT_LIST_DIR}/include
+                  FILES ${SVF_CORE_HEADERS}
+  PRIVATE ${SVF_CORE_SOURCES}
+)
+
+# Only expose the headers in the source tree to in-tree users of SVF
+target_include_directories(SvfCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>)
+
+# Set the library & .so version of the core library
+set_target_properties(SvfCore PROPERTIES VERSION ${SVF_VERSION} SOVERSION ${SVF_VERSION_MAJOR})
+
+# Install the core library's files to the regular/configured install tree
+install(
+  TARGETS SvfCore
+  EXPORT SVFTargets
+  RUNTIME DESTINATION ${SVF_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${SVF_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${SVF_INSTALL_LIBDIR}
+          FILE_SET HEADERS
+          DESTINATION ${SVF_INSTALL_INCLUDEDIR}
+)

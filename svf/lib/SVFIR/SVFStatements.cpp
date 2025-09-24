@@ -304,19 +304,19 @@ NodeID UnaryOPStmt::getResID() const
 /// to receive one or multiple return values of this function
 bool PhiStmt::isFunctionRetPhi() const
 {
-    return SVFUtil::isa<RetPN>(getRes());
+    return SVFUtil::isa<RetValPN>(getRes());
 }
 
 
 /// The branch is unconditional if cond is a null value
 bool BranchStmt::isUnconditional() const
 {
-    return cond->getId() == SymbolTableInfo::SymbolInfo()->nullPtrSymID();
+    return cond->getId() == PAG::getPAG()->nullPtrSymID();
 }
 /// The branch is conditional if cond is not a null value
 bool BranchStmt::isConditional() const
 {
-    return cond->getId() != SymbolTableInfo::SymbolInfo()->nullPtrSymID();;
+    return cond->getId() != PAG::getPAG()->nullPtrSymID();;
 }
 /// Return the condition
 const SVFVar* BranchStmt::getCondition() const
@@ -325,7 +325,7 @@ const SVFVar* BranchStmt::getCondition() const
     return cond;
 }
 
-StoreStmt::StoreStmt(SVFVar* s, SVFVar* d, const IntraICFGNode* st)
+StoreStmt::StoreStmt(SVFVar* s, SVFVar* d, const ICFGNode* st)
     : AssignStmt(s, d, makeEdgeFlagWithStoreInst(SVFStmt::Store, st))
 {
 }

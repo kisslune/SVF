@@ -52,10 +52,12 @@ static u32_t gepNodeNumIndex = 100000;
 9 v
 5 addr 6 0
 6 gep 7 4
-7 copy 8 0
+7 copy-ZEXT 8 0
 6 store 8 0
 8 load 9 0
  */
+// for copy stmt, the enum is COPYVAL, ZEXT, SEXT, BITCAST, TRUNC, FPTRUNC,
+//         FPTOUI, FPTOSI, UITOFP, SITOFP, INTTOPTR, PTRTOINT, UNKNOWN
 SVFIR* PAGBuilderFromFile::build()
 {
 
@@ -88,11 +90,10 @@ SVFIR* PAGBuilderFromFile::build()
                 ss >> nodetype;
                 outs() << "reading node :" << nodeId << "\n";
                 if (nodetype == "v")
-                    pag->addDummyValNode(nodeId);
+                    pag->addDummyValNode(nodeId, nullptr);
                 else if (nodetype == "o")
                 {
-                    const MemObj* mem = pag->addDummyMemObj(nodeId, nullptr);
-                    pag->addFIObjNode(mem);
+                    pag->addFIObjNode(nodeId, pag->createObjTypeInfo(nullptr), SVFType::getSVFPtrType(), nullptr);
                 }
                 else
                     assert(false && "format not support, pls specify node type");
@@ -103,7 +104,7 @@ SVFIR* PAGBuilderFromFile::build()
             {
                 NodeID nodeSrc;
                 NodeID nodeDst;
-                s32_t offsetOrCSId;
+                APOffset offsetOrCSId;
                 string edge;
                 istringstream ss(line);
                 ss >> nodeSrc;
@@ -144,7 +145,7 @@ SVFIR* PAGBuilderFromFile::build()
  * Add SVFIR edge according to a file format
  */
 void PAGBuilderFromFile::addEdge(NodeID srcID, NodeID dstID,
-                                 s32_t offsetOrCSId, std::string edge)
+                                 APOffset offsetOrCSId, std::string edge)
 {
 
     //check whether these two nodes available
@@ -162,16 +163,73 @@ void PAGBuilderFromFile::addEdge(NodeID srcID, NodeID dstID,
     {
         pag->addAddrStmt(srcID, dstID);
     }
-    else if (edge == "copy")
-        pag->addCopyStmt(srcID, dstID);
+    if (edge.rfind("copy-", 0) == 0)
+    {
+        // the enum is COPYVAL, ZEXT, SEXT, BITCAST, TRUNC, FPTRUNC,
+        ////         FPTOUI, FPTOSI, UITOFP, SITOFP, INTTOPTR, PTRTOINT, UNKNOWN
+        std::string opType = edge.substr(5); // start substring from 5th char
+
+        if (opType == "COPYVAL")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::COPYVAL);
+        }
+        else if (opType == "ZEXT")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::ZEXT);
+        }
+        else if (opType == "SEXT")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::SEXT);
+        }
+        else if (opType == "BITCAST")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::BITCAST);
+        }
+        else if (opType == "TRUNC")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::TRUNC);
+        }
+        else if (opType == "FPTRUNC")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::FPTRUNC);
+        }
+        else if (opType == "FPTOUI")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::FPTOUI);
+        }
+        else if (opType == "FPTOSI")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::FPTOSI);
+        }
+        else if (opType == "UITOFP")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::UITOFP);
+        }
+        else if (opType == "SITOFP")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::SITOFP);
+        }
+        else if (opType == "INTTOPTR")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::INTTOPTR);
+        }
+        else if (opType == "PTRTOINT")
+        {
+            pag->addCopyStmt(srcID, dstID, CopyStmt::PTRTOINT);
+        }
+        else
+        {
+            assert(false && "format not support, can not create such edge");
+        }
+    }
     else if (edge == "load")
         pag->addLoadStmt(srcID, dstID);
     else if (edge == "store")
         pag->addStoreStmt(srcID, dstID, nullptr);
     else if (edge == "gep")
-        pag->addNormalGepStmt(srcID, dstID, LocationSet(offsetOrCSId));
+        pag->addNormalGepStmt(srcID, dstID, AccessPath(offsetOrCSId));
     else if (edge == "variant-gep")
-        pag->addVariantGepStmt(srcID, dstID, LocationSet(offsetOrCSId));
+        pag->addVariantGepStmt(srcID, dstID, AccessPath(offsetOrCSId));
     else if (edge == "call")
         pag->addEdge(srcNode, dstNode, new CallPE(srcNode, dstNode, nullptr, nullptr));
     else if (edge == "ret")

@@ -315,7 +315,7 @@ void VersionedFlowSensitive::meldLabel(void)
 
                     int mSCC = partOf[m];
 
-                    // There is an edge from the SCC n belongs to to that m belongs to.
+                    // There is an edge from the SCC n belongs to that m belongs to.
                     sccReliance[nSCC].insert(mSCC);
 
                     // Ignore edges to delta nodes (prelabeled consume).
@@ -385,7 +385,7 @@ void VersionedFlowSensitive::meldLabel(void)
 
             // 7. a. Save versions for nodes which need them.
             //    b. Fill in stmtReliance.
-            // TODO: maybe randomise iteration order for less contention? Needs profiling.
+            // TODO: maybe randomize iteration order for less contention? Needs profiling.
             Map<Version, NodeBS> &osStmtReliance = this->stmtReliance.at(o);
             for (size_t i = 0; i < nodesWhichNeedVersions.size(); ++i)
             {
@@ -481,11 +481,11 @@ void VersionedFlowSensitive::buildDeltaMaps(void)
         //  * Callsite returns: can get new incoming indirect edges if the callsite is indirect.
         //  * Otherwise: static.
         bool isDelta = false;
-        if (const SVFFunction *fn = svfg->isFunEntrySVFGNode(s))
+        if (const FunObjVar *fn = svfg->isFunEntrySVFGNode(s))
         {
-            PTACallGraphEdge::CallInstSet callsites;
+            CallGraphEdge::CallInstSet callsites;
             /// use pre-analysis call graph to approximate all potential callsites
-            ander->getPTACallGraph()->getIndCallSitesInvokingCallee(fn, callsites);
+            ander->getCallGraph()->getIndCallSitesInvokingCallee(fn, callsites);
             isDelta = !callsites.empty();
 
             if (isDelta)
@@ -656,32 +656,35 @@ bool VersionedFlowSensitive::processLoad(const LoadSVFGNode* load)
     NodeID q = load->getPAGSrcNodeID();
 
     const PointsTo& qpt = getPts(q);
-    for (NodeID o : qpt)
+    // p = *q, the type of p must be a pointer
+    if (load->getPAGDstNode()->isPointer())
     {
-        if (pag->isConstantObj(o) || pag->isNonPointerObj(o)) continue;
-
-        const Version c = getConsume(l, o);
-        if (c != invalidVersion && vPtD->unionPts(p, atKey(o, c)))
+        for (NodeID o : qpt)
         {
-            changed = true;
-        }
+            if (pag->isConstantObj(o)) continue;
 
-        if (isFieldInsensitive(o))
-        {
-            /// If o is a field-insensitive object, we should also get all field nodes'
-            /// points-to sets and pass them to p.
-            const NodeBS& fields = getAllFieldsObjVars(o);
-            for (NodeID of : fields)
+            const Version c = getConsume(l, o);
+            if (c != invalidVersion && vPtD->unionPts(p, atKey(o, c)))
             {
-                const Version c = getConsume(l, of);
-                if (c != invalidVersion && vPtD->unionPts(p, atKey(of, c)))
+                changed = true;
+            }
+
+            if (isFieldInsensitive(o))
+            {
+                /// If o is a field-insensitive object, we should also get all field nodes'
+                /// points-to sets and pass them to p.
+                const NodeBS& fields = getAllFieldsObjVars(o);
+                for (NodeID of : fields)
                 {
-                    changed = true;
+                    const Version c = getConsume(l, of);
+                    if (c != invalidVersion && vPtD->unionPts(p, atKey(of, c)))
+                    {
+                        changed = true;
+                    }
                 }
             }
         }
     }
-
     double end = stat->getClk();
     loadTime += (end - start) / TIMEINTERVAL;
     return changed;
@@ -707,15 +710,19 @@ bool VersionedFlowSensitive::processStore(const StoreSVFGNode* store)
 
     if (!qpt.empty())
     {
-        for (NodeID o : ppt)
+        // *p = q, the type of q must be a pointer
+        if (store->getPAGSrcNode()->isPointer())
         {
-            if (pag->isConstantObj(o) || pag->isNonPointerObj(o)) continue;
-
-            const Version y = getYield(l, o);
-            if (y != invalidVersion && vPtD->unionPts(atKey(o, y), q))
+            for (NodeID o : ppt)
             {
-                changed = true;
-                changedObjects.set(o);
+                if (pag->isConstantObj(o)) continue;
+
+                const Version y = getYield(l, o);
+                if (y != invalidVersion && vPtD->unionPts(atKey(o, y), q))
+                {
+                    changed = true;
+                    changedObjects.set(o);
+                }
             }
         }
     }
@@ -776,8 +783,9 @@ void VersionedFlowSensitive::cluster(void)
     for (SVFIR::iterator pit = pag->begin(); pit != pag->end(); ++pit)
     {
         unsigned occ = 1;
+        //ABTest
         unsigned v = pit->first;
-        if (Options::PredictPtOcc() && pag->getObject(v) != nullptr) occ = stmtReliance[v].size() + 1;
+        if (Options::PredictPtOcc() && pag->getBaseObject(v) != nullptr) occ = stmtReliance[v].size() + 1;
         assert(occ != 0);
         keys.push_back(std::make_pair(v, occ));
     }
@@ -949,6 +957,154 @@ void VersionedFlowSensitive::dumpMeldVersion(MeldVersion &v)
     }
 
     SVFUtil::outs() << " ]";
+}
+
+void VersionedFlowSensitive::readPtsFromFile(const std::string& filename)
+{
+    /// Initialization for the Solver
+    initialize();
+    /// Load the pts from file
+    if(!filename.empty())
+    {
+        SVFUtil::outs() << "Loading versioned pointer analysis results from '" << filename << "'...";
+
+        std::ifstream F(filename.c_str());
+        if (!F.is_open())
+        {
+            SVFUtil::outs() << "  error opening file for reading!\n";
+            return ;
+        }
+        readAndSetObjFieldSensitivity(F,"------");
+
+        readVersionedAnalysisResultFromFile(F);
+
+        readPtsResultFromFile(F);
+
+        readGepObjVarMapFromFile(F);
+
+        readAndSetObjFieldSensitivity(F,"");
+
+        // Update callgraph
+        updateCallGraph(pag->getIndirectCallsites());
+
+        F.close();
+        SVFUtil::outs() << "\n";
+    }
+
+    /// finalize the analysis
+    finalize();
+}
+
+void VersionedFlowSensitive::solveAndwritePtsToFile(const std::string& filename)
+{
+    /// Initialization for the Solver
+    initialize();
+    if(!filename.empty())
+        writeObjVarToFile(filename);
+    solveConstraints();
+    if(!filename.empty())
+    {
+        writeVersionedAnalysisResultToFile(filename);
+        writeToFile(filename);
+    }
+    /// finalize the analysis
+    finalize();
+}
+
+void VersionedFlowSensitive::writeVersionedAnalysisResultToFile(const std::string& filename)
+{
+    SVFUtil::outs() << "Storing Versioned Analysis Result to '" << filename << "'...";
+    std::error_code err;
+    std::fstream f(filename.c_str(), std::ios_base::app);
+    if (!f.good())
+    {
+        SVFUtil::outs() << "  error opening file for writing!\n";
+        return;
+    }
+
+    for (const VersionedFlowSensitive::LocVersionMap *lvm :
+            {
+                &this->consume, &this->yield
+            })
+    {
+        for (const VersionedFlowSensitive::ObjToVersionMap  &lov : *lvm)
+        {
+            for (const VersionedFlowSensitive::ObjToVersionMap::value_type &ov : lov)
+            {
+                const NodeID o = ov.first;
+                const Version v = ov.second;
+                if (vPtD->getPts(atKey(o, v)).empty()) continue;
+
+                f <<"[ " <<o <<" " <<v<<" ]"<< " -> { ";
+                const PointsTo &ovPts = vPtD->getPts(atKey(o, v));
+                if (!ovPts.empty())
+                {
+                    for (NodeID n: ovPts)
+                    {
+                        f << n << " ";
+                    }
+                }
+                else
+                {
+                    f << " ";
+                }
+                f << "}\n";
+            }
+        }
+    }
+
+    f << "---VERSIONED---\n";
+
+    f.close();
+    if (f.good())
+    {
+        SVFUtil::outs() << "\n";
+        return;
+    }
+}
+
+void VersionedFlowSensitive::readVersionedAnalysisResultFromFile(std::ifstream& F)
+{
+    std::string line;
+    std::string delimiter1 = " -> { ";
+    std::string delimiter2 = " }";
+    while (F.good())
+    {
+        // Parse a single line in the form of "[ var version ] -> { obj1 obj2 obj3 }"
+        getline(F, line);
+        if (line == "---VERSIONED---")     break;
+        std::string pair = line.substr(line.find("[ ")+1, line.find(" ]"));
+
+        // Parse VersionKey
+        std::istringstream ss(pair);
+        NodeID nodeID;
+        Version nodeVersion;
+        ss>> nodeID >> nodeVersion;
+        VersionedVar keyPair = atKey(nodeID,nodeVersion);
+
+        // Parse Point-to set
+        size_t pos = line.find(delimiter1);
+        if (pos == std::string::npos)    break;
+        if (line.back() != '}')     break;
+        pos = pos + delimiter1.length();
+        size_t len = line.length() - pos - delimiter2.length();
+        std::string objs = line.substr(pos, len);
+        PointsTo dstPts;
+        if (!objs.empty())
+        {
+            std::istringstream pt(objs);
+            NodeID obj;
+            while (pt.good())
+            {
+                pt >> obj;
+                dstPts.set(obj);
+            }
+        }
+
+        // union point-to reuslt
+        vPtD->unionPts(keyPair, dstPts);
+    }
+
 }
 
 unsigned VersionedFlowSensitive::SCC::detectSCCs(VersionedFlowSensitive *vfs,

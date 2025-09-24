@@ -29,6 +29,7 @@
 
 #include "Util/Options.h"
 #include "Util/SVFStat.h"
+#include "Graphs/CallGraph.h"
 
 using namespace SVF;
 using namespace std;
@@ -36,7 +37,7 @@ using namespace std;
 double SVFStat::timeOfBuildingLLVMModule = 0;
 double SVFStat::timeOfBuildingSVFIR = 0;
 double SVFStat::timeOfBuildingSymbolTable = 0;
-
+bool SVFStat::printGeneralStats = true;
 
 SVFStat::SVFStat() : startTime(0), endTime(0)
 {
@@ -66,7 +67,7 @@ double SVFStat::getClk(bool mark)
 void SVFStat::printStat(string statname)
 {
 
-    std::string moduleName(SVFIR::getPAG()->getModule()->getModuleIdentifier());
+    std::string moduleName(SVFIR::getPAG()->getModuleIdentifier());
     std::vector<std::string> names = SVFUtil::split(moduleName,'/');
     if (names.size() > 1)
     {
@@ -77,23 +78,28 @@ void SVFStat::printStat(string statname)
     SVFUtil::outs() << "################ (program : " << moduleName << ")###############\n";
     SVFUtil::outs().flags(std::ios::left);
     unsigned field_width = 20;
+
     for(NUMStatMap::iterator it = generalNumMap.begin(), eit = generalNumMap.end(); it!=eit; ++it)
     {
         // format out put with width 20 space
         std::cout << std::setw(field_width) << it->first << it->second << "\n";
     }
-    SVFUtil::outs() << "-------------------------------------------------------\n";
+
+    if(!timeStatMap.empty())
+        SVFUtil::outs() << "----------------Time and memory stats--------------------\n";
     for(TIMEStatMap::iterator it = timeStatMap.begin(), eit = timeStatMap.end(); it!=eit; ++it)
     {
         // format out put with width 20 space
         SVFUtil::outs() << std::setw(field_width) << it->first << it->second << "\n";
     }
+
+    if(!PTNumStatMap.empty())
+        SVFUtil::outs() << "----------------Numbers stats----------------------------\n";
     for(NUMStatMap::iterator it = PTNumStatMap.begin(), eit = PTNumStatMap.end(); it!=eit; ++it)
     {
         // format out put with width 20 space
         SVFUtil::outs() << std::setw(field_width) << it->first << it->second << "\n";
     }
-
     SVFUtil::outs() << "#######################################################" << std::endl;
     SVFUtil::outs().flush();
     generalNumMap.clear();
@@ -103,6 +109,10 @@ void SVFStat::printStat(string statname)
 
 void SVFStat::performStat()
 {
+
+    /// SVF's general statistics are only printed once even if you run multiple anayses
+    if(printGeneralStats == false)
+        return;
 
     SVFIR* pag = SVFIR::getPAG();
     u32_t numOfFunction = 0;
@@ -117,13 +127,13 @@ void SVFStat::performStat()
     u32_t numOfConstant = 0;
     u32_t fiObjNumber = 0;
     u32_t fsObjNumber = 0;
-    Set<SymID> memObjSet;
+    Set<NodeID> memObjSet;
     for(SVFIR::iterator it = pag->begin(), eit = pag->end(); it!=eit; ++it)
     {
         PAGNode* node = it->second;
         if(ObjVar* obj = SVFUtil::dyn_cast<ObjVar>(node))
         {
-            const MemObj* mem = obj->getMemObj();
+            const BaseObjVar* mem = pag->getBaseObject(obj->getId());
             if (memObjSet.insert(mem->getId()).second == false)
                 continue;
             if(mem->isBlackHoleObj())
@@ -132,10 +142,16 @@ void SVFStat::performStat()
                 numOfFunction++;
             if(mem->isGlobalObj())
                 numOfGlobal++;
-            if(mem->isStack())
+            if (pag->getBaseObject(obj->getId()) &&
+                    SVFUtil::isa<StackObjVar>(
+                        pag->getBaseObject(obj->getId())))
                 numOfStack++;
-            if(mem->isHeap())
+            if (pag->getBaseObject(obj->getId()) &&
+                    SVFUtil::isa<HeapObjVar, DummyObjVar>(
+                        pag->getBaseObject(obj->getId())))
+            {
                 numOfHeap++;
+            }
             if(mem->isVarArray())
                 numOfHasVarArray++;
             if(mem->isVarStruct())
@@ -144,7 +160,7 @@ void SVFStat::performStat()
                 numOfHasConstArray++;
             if(mem->isConstantStruct())
                 numOfHasConstStruct++;
-            if(mem->hasPtrObj() == false)
+            if(mem->getType()->isPointerTy() == false)
                 numOfScalar++;
             if(mem->isConstDataOrConstGlobal())
                 numOfConstant++;
@@ -158,10 +174,10 @@ void SVFStat::performStat()
 
 
 
-    generalNumMap["TotalPointers"] = pag->getValueNodeNum() + pag->getFieldValNodeNum();
+    generalNumMap["TotalPointers"] = pag->getValueNodeNum();
     generalNumMap["TotalObjects"] = pag->getObjectNodeNum();
     generalNumMap["TotalFieldObjects"] = pag->getFieldObjNodeNum();
-    generalNumMap["MaxStructSize"] = SymbolTableInfo::SymbolInfo()->getMaxStructSize();
+    generalNumMap["MaxStructSize"] = pag->getMaxStructSize();
     generalNumMap["TotalSVFStmts"] = pag->getPAGEdgeNum();
     generalNumMap["TotalPTASVFStmts"] = pag->getPTAPAGEdgeNum();
     generalNumMap["FIObjNum"] = fiObjNumber;
@@ -199,22 +215,22 @@ void SVFStat::performStat()
 
     printStat("General Stats");
 
+    printGeneralStats = false;
 }
 
 
 void SVFStat::branchStat()
 {
-    SVFModule* module = SVFIR::getPAG()->getModule();
     u32_t numOfBB_2Succ = 0;
     u32_t numOfBB_3Succ = 0;
-    for (SVFModule::const_iterator funIter = module->begin(), funEiter = module->end();
-            funIter != funEiter; ++funIter)
+    const CallGraph* svfirCallGraph = PAG::getPAG()->getCallGraph();
+    for (const auto& item: *svfirCallGraph)
     {
-        const SVFFunction* func = *funIter;
-        for (SVFFunction::const_iterator bbIt = func->begin(), bbEit = func->end();
+        const FunObjVar* func = item.second->getFunction();
+        for (FunObjVar::const_bb_iterator bbIt = func->begin(), bbEit = func->end();
                 bbIt != bbEit; ++bbIt)
         {
-            const SVFBasicBlock* bb = *bbIt;
+            const SVFBasicBlock* bb = bbIt->second;
             u32_t numOfSucc = bb->getNumSuccessors();
             if (numOfSucc == 2)
                 numOfBB_2Succ++;

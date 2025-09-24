@@ -28,7 +28,6 @@
  */
 
 #include "Util/Options.h"
-#include "SVFIR/SVFModule.h"
 #include "WPA/WPAStat.h"
 #include "WPA/FlowSensitive.h"
 #include "WPA/Andersen.h"
@@ -74,16 +73,9 @@ void FlowSensitive::initialize()
     setGraph(svfg);
     //AndersenWaveDiff::releaseAndersenWaveDiff();
 }
-
-/*!
- * Start analysis
- */
-void FlowSensitive::analyze()
+void FlowSensitive::solveConstraints()
 {
     bool limitTimerSet = SVFUtil::startAnalysisLimitTimer(Options::FsTimeLimit());
-
-    /// Initialization for the Solver
-    initialize();
 
     double start = stat->getClk(true);
     /// Start solving constraints
@@ -111,6 +103,55 @@ void FlowSensitive::analyze()
     double end = stat->getClk(true);
     solveTime += (end - start) / TIMEINTERVAL;
 
+}
+
+/*!
+ * Start analysis
+ */
+void FlowSensitive::solveAndwritePtsToFile(const std::string& filename)
+{
+    /// Initialization for the Solver
+    initialize();
+    if(!filename.empty())
+        writeObjVarToFile(filename);
+    solveConstraints();
+    if(!filename.empty())
+        writeToFile(filename);
+    /// finalize the analysis
+    finalize();
+}
+
+/*!
+ * Start analysis
+ */
+void FlowSensitive::analyze()
+{
+    if(!Options::ReadAnder().empty())
+    {
+        readPtsFromFile(Options::ReadAnder());
+    }
+    else
+    {
+        if(Options::WriteAnder().empty())
+        {
+            initialize();
+            solveConstraints();
+            finalize();
+        }
+        else
+        {
+            solveAndwritePtsToFile(Options::WriteAnder());
+        }
+    }
+}
+
+void FlowSensitive::readPtsFromFile(const std::string& filename)
+{
+    /// Initialization for the Solver
+    initialize();
+    /// Load the pts from file
+    if(!filename.empty())
+        this->readFromFile(filename);
     /// finalize the analysis
     finalize();
 }
@@ -487,7 +528,7 @@ bool FlowSensitive::processGep(const GepSVFGNode* edge)
                 continue;
             }
 
-            NodeID fieldSrcPtdNode = getGepObjVar(o, gepStmt->getLocationSet());
+            NodeID fieldSrcPtdNode = getGepObjVar(o, gepStmt->getAccessPath().getConstantStructFldIdx());
             tmpDstPts.set(fieldSrcPtdNode);
         }
     }
@@ -515,30 +556,34 @@ bool FlowSensitive::processLoad(const LoadSVFGNode* load)
     NodeID dstVar = load->getPAGDstNodeID();
 
     const PointsTo& srcPts = getPts(load->getPAGSrcNodeID());
-    for (PointsTo::iterator ptdIt = srcPts.begin(); ptdIt != srcPts.end(); ++ptdIt)
+
+    // p = *q, the type of p must be a pointer
+    if(load->getPAGDstNode()->isPointer())
     {
-        NodeID ptd = *ptdIt;
-
-        if (pag->isConstantObj(ptd) || pag->isNonPointerObj(ptd))
-            continue;
-
-        if (unionPtsFromIn(load, ptd, dstVar))
-            changed = true;
-
-        if (isFieldInsensitive(ptd))
+        for (PointsTo::iterator ptdIt = srcPts.begin(); ptdIt != srcPts.end(); ++ptdIt)
         {
-            /// If the ptd is a field-insensitive node, we should also get all field nodes'
-            /// points-to sets and pass them to pagDst.
-            const NodeBS& allFields = getAllFieldsObjVars(ptd);
-            for (NodeBS::iterator fieldIt = allFields.begin(), fieldEit = allFields.end();
-                    fieldIt != fieldEit; ++fieldIt)
+            NodeID ptd = *ptdIt;
+
+            if (pag->isConstantObj(ptd))
+                continue;
+
+            if (unionPtsFromIn(load, ptd, dstVar))
+                changed = true;
+
+            if (isFieldInsensitive(ptd))
             {
-                if (unionPtsFromIn(load, *fieldIt, dstVar))
-                    changed = true;
+                /// If the ptd is a field-insensitive node, we should also get all field nodes'
+                /// points-to sets and pass them to pagDst.
+                const NodeBS& allFields = getAllFieldsObjVars(ptd);
+                for (NodeBS::iterator fieldIt = allFields.begin(), fieldEit = allFields.end();
+                        fieldIt != fieldEit; ++fieldIt)
+                {
+                    if (unionPtsFromIn(load, *fieldIt, dstVar))
+                        changed = true;
+                }
             }
         }
     }
-
     double end = stat->getClk();
     loadTime += (end - start) / TIMEINTERVAL;
     return changed;
@@ -567,13 +612,14 @@ bool FlowSensitive::processStore(const StoreSVFGNode* store)
     double start = stat->getClk();
     bool changed = false;
 
-    if(getPts(store->getPAGSrcNodeID()).empty() == false)
+    // *p = q, the type of q must be a pointer
+    if(getPts(store->getPAGSrcNodeID()).empty() == false && store->getPAGSrcNode()->isPointer())
     {
         for (PointsTo::iterator it = dstPts.begin(), eit = dstPts.end(); it != eit; ++it)
         {
             NodeID ptd = *it;
 
-            if (pag->isConstantObj(ptd) || pag->isNonPointerObj(ptd))
+            if (pag->isConstantObj(ptd))
                 continue;
 
             if (unionPtsFromTop(store, store->getPAGSrcNodeID(), ptd))
@@ -623,11 +669,14 @@ bool FlowSensitive::isStrongUpdate(const SVFGNode* node, NodeID& singleton)
             singleton = *it;
 
             // Strong update can be made if this points-to target is not heap, array or field-insensitive.
-            if (!isHeapMemObj(singleton) && !isArrayMemObj(singleton)
-                    && pag->getBaseObj(singleton)->isFieldInsensitive() == false
-                    && !isLocalVarInRecursiveFun(singleton))
+            if (!isHeapMemObj(singleton) && !isArrayMemObj(singleton))
             {
-                isSU = true;
+                assert(pag->getBaseObject(singleton)->isFieldInsensitive() == pag->getBaseObject(singleton)->isFieldInsensitive());
+                if (pag->getBaseObject(singleton)->isFieldInsensitive() == false
+                        && !isLocalVarInRecursiveFun(singleton))
+                {
+                    isSU = true;
+                }
             }
         }
     }
@@ -663,7 +712,7 @@ bool FlowSensitive::updateCallGraph(const CallSiteToFunPtrMap& callsites)
         for (FunctionSet::iterator potentialFunctionIt = potentialFunctionSet.begin();
                 potentialFunctionIt != potentialFunctionSet.end(); )
         {
-            const SVFFunction *potentialFunction = *potentialFunctionIt;
+            const FunObjVar *potentialFunction = *potentialFunctionIt;
             if (andersFunctionSet.find(potentialFunction) == andersFunctionSet.end())
             {
                 // potentialFunction is not in the Andersen's call graph -- remove it.
@@ -700,7 +749,7 @@ void FlowSensitive::connectCallerAndCallee(const CallEdgeMap& newEdges, SVFGEdge
         const FunctionSet & functions = iter->second;
         for (FunctionSet::const_iterator func_iter = functions.begin(); func_iter != functions.end(); func_iter++)
         {
-            const SVFFunction*  func = *func_iter;
+            const FunObjVar*  func = *func_iter;
             svfg->connectCallerAndCallee(cs, func, edges);
         }
     }

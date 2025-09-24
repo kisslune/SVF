@@ -1,14 +1,17 @@
 Release*/
+install/
 Debug*/
 build/
 html/
-Test-Suite/
+Test-Suite
 Release+Asserts/
 Debug+Asserts/
 autoconf/
 tests/result/
 doxygen/
 .*
+!.config.in
+!.config.cmake.in
 !.gitignore
 *~
 *.o
@@ -21,3 +24,5 @@ doxygen/
 *.obj
 *.svf
 cmake-build-debug/
+compile_commands.json
+Static-Analysis-Class/

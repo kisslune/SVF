@@ -45,7 +45,8 @@
 namespace SVF
 {
 
-class SVFModule;
+
+class ThreadCallGraph;
 
 /*!
  * Abstract class of inclusion-based Pointer Analysis
@@ -54,6 +55,9 @@ typedef WPASolver<ConstraintGraph*> WPAConstraintSolver;
 
 class AndersenBase:  public WPAConstraintSolver, public BVDataPTAImpl
 {
+public:
+    typedef OrderedMap<const CallICFGNode*, NodeID> CallSite2DummyValPN;
+
 public:
 
     /// Constructor
@@ -69,17 +73,31 @@ public:
     /// Andersen analysis
     virtual void analyze() override;
 
+    virtual void solveAndwritePtsToFile(const std::string& filename);
+
+    virtual void readPtsFromFile(const std::string& filename);
+
+    virtual void solveConstraints();
+
     /// Initialize analysis
     virtual void initialize() override;
 
     /// Finalize analysis
     virtual void finalize() override;
 
-    /// Implement it in child class to update call graph
-    virtual inline bool updateCallGraph(const CallSiteToFunPtrMap&) override
-    {
-        return false;
-    }
+    /// Update call graph
+    virtual bool updateCallGraph(const CallSiteToFunPtrMap&) override;
+
+    /// Update thread call graph
+    virtual bool updateThreadCallGraph(const CallSiteToFunPtrMap&, NodePairSet&);
+
+    /// Connect formal and actual parameters for indirect forksites
+    virtual void connectCaller2ForkedFunParams(const CallICFGNode* cs, const FunObjVar* F,
+            NodePairSet& cpySrcNodes);
+
+    /// Connect formal and actual parameters for indirect callsites
+    virtual void connectCaller2CalleeParams(const CallICFGNode* cs, const FunObjVar* F,
+                                            NodePairSet& cpySrcNodes);
 
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
@@ -104,6 +122,21 @@ public:
     {
         return consCG;
     }
+
+    /// SCC methods
+    //@{
+    inline NodeID sccRepNode(NodeID id) const override
+    {
+        return consCG->sccRepNode(id);
+    }
+    inline NodeBS& sccSubNodes(NodeID repId)
+    {
+        return consCG->sccSubNodes(repId);
+    }
+    //@}
+
+    /// Add copy edge on constraint graph
+    virtual bool addCopyEdge(NodeID src, NodeID dst) = 0;
 
     /// dump statistics
     inline void printStat()
@@ -142,6 +175,11 @@ public:
 protected:
     /// Constraint Graph
     ConstraintGraph* consCG;
+    CallSite2DummyValPN
+    callsite2DummyValPN; ///< Map an instruction to a dummy obj which
+    ///< created at an indirect callsite, which invokes
+    ///< a heap allocator
+    void heapAllocatorViaIndCall(const CallICFGNode* cs, NodePairSet& cpySrcNodes);
 };
 
 /*!
@@ -153,7 +191,6 @@ class Andersen:  public AndersenBase
 
 public:
     typedef SCCDetection<ConstraintGraph*> CGSCC;
-    typedef OrderedMap<CallSite, NodeID> CallSite2DummyValPN;
 
     /// Constructor
     Andersen(SVFIR* _pag, PTATY type = Andersen_WPA, bool alias_check = true)
@@ -197,18 +234,6 @@ public:
     }
     //@}
 
-    /// SCC methods
-    //@{
-    inline NodeID sccRepNode(NodeID id) const
-    {
-        return consCG->sccRepNode(id);
-    }
-    inline NodeBS& sccSubNodes(NodeID repId)
-    {
-        return consCG->sccSubNodes(repId);
-    }
-    //@}
-
     /// Operation of points-to set
     virtual inline const PointsTo& getPts(NodeID id)
     {
@@ -237,7 +262,6 @@ public:
 protected:
 
     CallSite2DummyValPN callsite2DummyValPN;        ///< Map an instruction to a dummy obj which created at an indirect callsite, which invokes a heap allocator
-    void heapAllocatorViaIndCall(CallSite cs,NodePairSet &cpySrcNodes);
 
     /// Handle diff points-to set.
     virtual inline void computeDiffPts(NodeID id)
@@ -305,12 +329,6 @@ protected:
         return false;
     }
 
-    /// Update call graph for the input indirect callsites
-    virtual bool updateCallGraph(const CallSiteToFunPtrMap& callsites);
-
-    /// Connect formal and actual parameters for indirect callsites
-    void connectCaller2CalleeParams(CallSite cs, const SVFFunction* F, NodePairSet& cpySrcNodes);
-
     /// Merge sub node to its rep
     virtual void mergeNodeToRep(NodeID nodeId,NodeID newRepId);
 
@@ -321,7 +339,7 @@ protected:
     void mergeSccNodes(NodeID repNodeId, const NodeBS& subNodes);
     void mergeSccCycle();
     //@}
-    /// Collapse a field object into its base for field insensitive anlaysis
+    /// Collapse a field object into its base for field insensitive analysis
     //@{
     virtual void collapsePWCNode(NodeID nodeId);
     void collapseFields();

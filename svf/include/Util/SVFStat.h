@@ -41,9 +41,9 @@ class SVFStat
 {
 public:
 
-    typedef OrderedMap<const char *, u32_t> NUMStatMap;
+    typedef OrderedMap<std::string, u32_t> NUMStatMap;
 
-    typedef OrderedMap<const char *, double> TIMEStatMap;
+    typedef OrderedMap<std::string, double> TIMEStatMap;
 
     enum ClockType
     {
@@ -69,6 +69,9 @@ public:
     /// only returned when Options::MarkedClocksOnly is not set.
     /// Default call for getClk is unmarked, while MarkedClocksOnly is false by default.
     static double getClk(bool mark = false);
+
+    /// SVF's general statistics are only printed once even if you run multiple anayses
+    static bool printGeneralStats;
 
     NUMStatMap generalNumMap;
     NUMStatMap PTNumStatMap;

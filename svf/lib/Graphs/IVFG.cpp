@@ -39,7 +39,7 @@ void IVFG::build(SVFG* svfg)
         if (ActualOUTSVFGNode* retNode =
                 SVFUtil::dyn_cast<ActualOUTSVFGNode>(svfgNode))
         {
-            const SVFInstruction* fun = retNode->getCallSite()->getCallSite();
+            auto fun = retNode->getCallSite();
             if (SaberCheckerAPI::getCheckerAPI()->isMemAlloc(fun))
             {
                 it->second->setSrc();
@@ -48,7 +48,7 @@ void IVFG::build(SVFG* svfg)
         if (ActualRetSVFGNode* retNode =
                 SVFUtil::dyn_cast<ActualRetSVFGNode>(svfgNode))
         {
-            const SVFInstruction* fun = retNode->getCallSite()->getCallSite();
+            auto fun = retNode->getCallSite();
             if (SaberCheckerAPI::getCheckerAPI()->isMemAlloc(fun))
             {
                 it->second->setSrc();

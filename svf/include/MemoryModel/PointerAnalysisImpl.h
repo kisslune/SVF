@@ -142,7 +142,12 @@ public:
     //@{
     virtual void writeToFile(const std::string& filename);
     virtual void writeObjVarToFile(const std::string& filename);
+    virtual void writePtsResultToFile(std::fstream& f);
+    virtual void writeGepObjVarMapToFile(std::fstream& f);
     virtual bool readFromFile(const std::string& filename);
+    virtual void readPtsResultFromFile(std::ifstream& f);
+    virtual void readGepObjVarMapFromFile(std::ifstream& f);
+    virtual void readAndSetObjFieldSensitivity(std::ifstream& f, const std::string& delimiterStr);
     //@}
 
 protected:
@@ -194,6 +199,10 @@ protected:
     /// On the fly call graph construction
     virtual void onTheFlyCallGraphSolve(const CallSiteToFunPtrMap& callsites, CallEdgeMap& newEdges);
 
+    /// On the fly thread call graph construction respecting forksite
+    virtual void onTheFlyThreadCallGraphSolve(const CallSiteToFunPtrMap& callsites,
+            CallEdgeMap& newForkEdges);
+
     /// Normalize points-to information for field-sensitive analysis,
     /// i.e., replace fieldObj with baseObj if it is field-insensitive
     virtual void normalizePointsTo();
@@ -206,8 +215,11 @@ private:
 
 public:
     /// Interface expose to users of our pointer analysis, given Value infos
-    AliasResult alias(const SVFValue* V1,
-                      const SVFValue* V2) override;
+    AliasResult alias(const SVFVar* V1,
+                      const SVFVar* V2) override
+    {
+        return alias(V1->getId(), V2->getId());
+    }
 
     /// Interface expose to users of our pointer analysis, given PAGNodeID
     AliasResult alias(NodeID node1, NodeID node2) override;
@@ -492,9 +504,9 @@ public:
     }
 
     /// Interface expose to users of our pointer analysis, given Value infos
-    virtual inline AliasResult alias(const SVFValue* V1, const SVFValue* V2)
+    virtual inline AliasResult alias(const SVFVar* V1, const SVFVar* V2)
     {
-        return  alias(pag->getValueNode(V1),pag->getValueNode(V2));
+        return  alias(V1->getId(), V2->getId());
     }
     /// Interface expose to users of our pointer analysis, given two pointers
     virtual inline AliasResult alias(NodeID node1, NodeID node2)
@@ -561,7 +573,7 @@ public:
                 }
                 else if (!SVFUtil::isa<DummyValVar>(node))
                 {
-                    SVFUtil::outs() << "##<" << node->getValue()->getName() << "> ";
+                    SVFUtil::outs() << "##<" << node->toString() << "> ";
                     //SVFUtil::outs() << "Source Loc: " << SVFUtil::getSourceLoc(node->getValue());
                 }
 

@@ -41,6 +41,7 @@
 #include "Util/WorkList.h"
 #include "Graphs/SVFG.h"
 #include "Util/DPItem.h"
+#include "Util/SVFBugReport.h"
 
 namespace SVF
 {
@@ -56,6 +57,9 @@ public:
 
     typedef FIFOWorkList<const SVFGNode*> VFWorkList;		    ///< worklist for value-flow guard computation
     typedef FIFOWorkList<const SVFBasicBlock*> CFWorkList;	///< worklist for control-flow guard computation
+
+    typedef SaberCondAllocator::SVFGNodeToSVFGNodeSetMap SVFGNodeToSVFGNodeSetMap;
+
 
     /// Constructor
     ProgSlice(const SVFGNode* src, SaberCondAllocator* pa, const SVFG* graph):
@@ -201,6 +205,8 @@ public:
     }
     /// Evaluate final condition
     std::string evalFinalCond() const;
+    /// Add final condition to eventStack
+    void evalFinalCond2Event(GenericBug::EventStack &eventStack) const;
     //@}
 
 protected:
@@ -291,6 +297,14 @@ protected:
     inline void setFinalCond(const Condition &cond)
     {
         finalCond = cond;
+    }
+
+    /// Compute invalid branch condition stemming from removed strong update value-flow edges
+    Condition computeInvalidCondFromRemovedSUVFEdge(const SVFGNode * cur);
+
+    const SVFGNodeToSVFGNodeSetMap& getRemovedSUVFEdges() const
+    {
+        return pathAllocator->getRemovedSUVFEdges();
     }
 
 private:

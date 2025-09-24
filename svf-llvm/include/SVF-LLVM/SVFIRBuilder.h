@@ -25,21 +25,22 @@
  *
  *  Created on: Nov 1, 2013
  *      Author: Yulei Sui
+ *  Refactored on: Jan 25, 2024
+ *      Author: Xiao Cheng, Yulei Sui
  */
 
 #ifndef PAGBUILDER_H_
 #define PAGBUILDER_H_
 
 #include "SVFIR/SVFIR.h"
-#include "Util/ExtAPI.h"
 #include "SVF-LLVM/BasicTypes.h"
 #include "SVF-LLVM/ICFGBuilder.h"
 #include "SVF-LLVM/LLVMModule.h"
+#include "SVF-LLVM/LLVMUtil.h"
 
 namespace SVF
 {
 
-class SVFModule;
 /*!
  *  SVFIR Builder to create SVF variables and statements and PAG
  */
@@ -48,13 +49,13 @@ class SVFIRBuilder: public llvm::InstVisitor<SVFIRBuilder>
 
 private:
     SVFIR* pag;
-    SVFModule* svfModule;
     const SVFBasicBlock* curBB;	///< Current basic block during SVFIR construction when visiting the module
-    const SVFValue* curVal;	///< Current Value during SVFIR construction when visiting the module
+    const Value* curVal;	///< Current Value during SVFIR construction when visiting the module
 
 public:
     /// Constructor
-    SVFIRBuilder(SVFModule* mod): pag(SVFIR::getPAG()), svfModule(mod), curBB(nullptr),curVal(nullptr)
+    SVFIRBuilder()
+        : pag(SVFIR::getPAG()), curBB(nullptr),curVal(nullptr)
     {
     }
     /// Destructor
@@ -62,7 +63,10 @@ public:
     {
     }
 
-    /// Start building SVFIR here
+    /**
+     * Build SVFIR, i.e., PAG
+     * @return a pointer pointing to a newly created PAG.
+     */
     virtual SVFIR* build();
 
     /// Return SVFIR
@@ -71,11 +75,21 @@ public:
         return pag;
     }
 
+    void createFunObjVars();
+    void initFunObjVar();
+
     /// Initialize nodes and edges
     //@{
     void initialiseNodes();
+    void initialiseBaseObjVars();
+    void initialiseValVars();
+
+    void initSVFBasicBlock(const Function* func);
+
+    void initDomTree(FunObjVar* func, const Function* f);
+
     void addEdge(NodeID src, NodeID dst, SVFStmt::PEDGEK kind,
-                 s32_t offset = 0, Instruction* cs = nullptr);
+                 APOffset offset = 0, Instruction* cs = nullptr);
     // @}
 
     /// Sanity check for SVFIR
@@ -90,25 +104,23 @@ public:
         processCE(V);
 
         // strip off the constant cast and return the value node
-        SVFValue* svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(V);
-        return pag->getValueNode(svfVal);
+        return llvmModuleSet()->getValueNode(V);
     }
 
     /// GetObject - Return the object node (stack/global/heap/function) according to a LLVM Value
     inline NodeID getObjectNode(const Value* V)
     {
-        SVFValue* svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(V);
-        return pag->getObjectNode(svfVal);
+        return llvmModuleSet()->getObjectNode(V);
     }
 
     /// getReturnNode - Return the node representing the unique return value of a function.
-    inline NodeID getReturnNode(const SVFFunction *func)
+    inline NodeID getReturnNode(const FunObjVar *func)
     {
         return pag->getReturnNode(func);
     }
 
     /// getVarargNode - Return the node representing the unique variadic argument of a function.
-    inline NodeID getVarargNode(const SVFFunction *func)
+    inline NodeID getVarargNode(const FunObjVar *func)
     {
         return pag->getVarargNode(func);
     }
@@ -201,12 +213,12 @@ public:
     //}@
 
     /// connect PAG edges based on callgraph
-    void updateCallGraph(PTACallGraph* callgraph);
+    void updateCallGraph(CallGraph* callgraph);
 
 protected:
     /// Handle globals including (global variable and functions)
     //@{
-    void visitGlobal(SVFModule* svfModule);
+    void visitGlobal();
     void InitialGlobal(const GlobalVariable *gvar, Constant *C,
                        u32_t offset);
     NodeID getGlobalVarField(const GlobalVariable *gvar, u32_t offset, SVFType* tpy);
@@ -216,16 +228,13 @@ protected:
     void processCE(const Value* val);
 
     /// Infer field index from byteoffset.
-    u32_t inferFieldIdxFromByteOffset(const llvm::GEPOperator* gepOp, DataLayout *dl, LocationSet& ls, s32_t idx);
+    u32_t inferFieldIdxFromByteOffset(const llvm::GEPOperator* gepOp, DataLayout *dl, AccessPath& ap, APOffset idx);
 
     /// Compute offset of a gep instruction or gep constant expression
-    bool computeGepOffset(const User *V, LocationSet& ls);
+    bool computeGepOffset(const User *V, AccessPath& ap);
 
     /// Get the base value of (i8* src and i8* dst) for external argument (e.g. memcpy(i8* dst, i8* src, int size))
     const Value* getBaseValueForExtArg(const Value* V);
-
-    /// Get the base type and max offset
-    const Type* getBaseTypeAndFlattenedFields(const Value* V, std::vector<LocationSet> &fields, const Value* sz);
 
     /// Handle direct call
     void handleDirectCall(CallBase* cs, const Function *F);
@@ -235,23 +244,23 @@ protected:
 
     /// Handle external call
     //@{
-    virtual void parseOperations(std::vector<ExtAPI::Operation>  &operations, CallBase* cs);
-    virtual void handleExtCall(CallBase* cs, const Function *F);
-    void addComplexConsForExt(const Value* D, const Value* S, const Value* sz);
+    virtual const Type *getBaseTypeAndFlattenedFields(const Value *V, std::vector<AccessPath> &fields, const Value* szValue);
+    virtual void addComplexConsForExt(Value *D, Value *S, const Value* sz);
+    virtual void handleExtCall(const CallBase* cs, const Function* callee);
     //@}
 
     /// Set current basic block in order to keep track of control flow information
     inline void setCurrentLocation(const Value* val, const BasicBlock* bb)
     {
-        curBB = (bb == nullptr? nullptr : LLVMModuleSet::getLLVMModuleSet()->getSVFBasicBlock(bb));
-        curVal = (val == nullptr ? nullptr: LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val));
+        curBB = (bb == nullptr? nullptr : llvmModuleSet()->getSVFBasicBlock(bb));
+        curVal = (val == nullptr ? nullptr: val);
     }
-    inline void setCurrentLocation(const SVFValue* val, const SVFBasicBlock* bb)
+    inline void setCurrentLocation(const Value* val, const SVFBasicBlock* bb)
     {
         curBB = bb;
         curVal = val;
     }
-    inline const SVFValue* getCurrentValue() const
+    inline const Value* getCurrentValue() const
     {
         return curVal;
     }
@@ -263,9 +272,9 @@ protected:
     /// Add global black hole Address edge
     void addGlobalBlackHoleAddrEdge(NodeID node, const ConstantExpr *int2Ptrce)
     {
-        const SVFValue* cval = getCurrentValue();
+        const Value* cval = getCurrentValue();
         const SVFBasicBlock* cbb = getCurrentBB();
-        setCurrentLocation(int2Ptrce,nullptr);
+        setCurrentLocation(int2Ptrce,(SVFBasicBlock*) nullptr);
         addBlackHoleAddrEdge(node);
         setCurrentLocation(cval,cbb);
     }
@@ -273,15 +282,16 @@ protected:
     /// Add NullPtr PAGNode
     inline NodeID addNullPtrNode()
     {
-        LLVMContext& cxt = LLVMModuleSet::getLLVMModuleSet()->getContext();
-        ConstantPointerNull* constNull = ConstantPointerNull::get(Type::getInt8PtrTy(cxt));
-        NodeID nullPtr = pag->addValNode(LLVMModuleSet::getLLVMModuleSet()->getSVFValue(constNull),pag->getNullPtr());
-        setCurrentLocation(constNull, nullptr);
+        LLVMContext& cxt = llvmModuleSet()->getContext();
+        ConstantPointerNull* constNull = ConstantPointerNull::get(PointerType::getUnqual(cxt));
+        NodeID nullPtr = pag->addConstantNullPtrValNode(pag->getNullPtr(), nullptr, llvmModuleSet()->getSVFType(constNull->getType()));
+        llvmModuleSet()->addToSVFVar2LLVMValueMap(constNull, pag->getGNode(pag->getNullPtr()));
+        setCurrentLocation(constNull, (SVFBasicBlock*) nullptr);
         addBlackHoleAddrEdge(pag->getBlkPtr());
         return nullPtr;
     }
 
-    NodeID getGepValVar(const Value* val, const LocationSet& ls, const SVFType* baseType);
+    NodeID getGepValVar(const Value* val, const AccessPath& ap, const SVFType* elementType);
 
     void setCurrentBBAndValueForPAGEdge(PAGEdge* edge);
 
@@ -301,16 +311,112 @@ protected:
         }
         return nullptr;
     }
-    /// Add Copy edge
-    inline CopyStmt* addCopyEdge(NodeID src, NodeID dst)
+
+    /// Add Address edge from allocinst with arraysize like "%4 = alloca i8, i64 3"
+    inline AddrStmt* addAddrWithStackArraySz(NodeID src, NodeID dst, llvm::AllocaInst& inst)
     {
-        if(CopyStmt *edge = pag->addCopyStmt(src, dst))
+        AddrStmt* edge = addAddrEdge(src, dst);
+        if (inst.getArraySize())
+        {
+            edge->addArrSize(pag->getGNode(getValueNode(inst.getArraySize())));
+        }
+        return edge;
+    }
+
+    /// Add Address edge from ext call with args like "%5 = call i8* @malloc(i64 noundef 5)"
+    inline AddrStmt* addAddrWithHeapSz(NodeID src, NodeID dst, const CallBase* cs)
+    {
+        // get name of called function
+        AddrStmt* edge = addAddrEdge(src, dst);
+
+        llvm::Function* calledFunc = cs->getCalledFunction();
+        std::string functionName;
+        if (calledFunc)
+        {
+            functionName = calledFunc->getName().str();
+        }
+        else
+        {
+            SVFUtil::wrnMsg("not support indirect call to add AddrStmt.\n");
+        }
+        if (functionName == "malloc")
+        {
+            if (cs->arg_size() > 0)
+            {
+                const llvm::Value* val = cs->getArgOperand(0);
+                edge->addArrSize(pag->getGNode(getValueNode(val)));
+            }
+        }
+        // Check if the function called is 'calloc' and process its arguments.
+        // e.g. "%5 = call i8* @calloc(1, 8)", edge should add two SVFValue (1 and 8)
+        else if (functionName == "calloc")
+        {
+            if (cs->arg_size() > 1)
+            {
+                edge->addArrSize(
+                    pag->getGNode(getValueNode(cs->getArgOperand(0))));
+                edge->addArrSize(
+                    pag->getGNode(getValueNode(cs->getArgOperand(1))));
+            }
+        }
+        else
+        {
+            if (cs->arg_size() > 0)
+            {
+                const llvm::Value* val = cs->getArgOperand(0);
+                edge->addArrSize(pag->getGNode(getValueNode(val)));
+            }
+        }
+        return edge;
+    }
+
+    inline CopyStmt* addCopyEdge(NodeID src, NodeID dst, CopyStmt::CopyKind kind)
+    {
+        if(CopyStmt *edge = pag->addCopyStmt(src, dst, kind))
         {
             setCurrentBBAndValueForPAGEdge(edge);
             return edge;
         }
         return nullptr;
     }
+
+    inline CopyStmt::CopyKind getCopyKind(const Value* val)
+    {
+        // COPYVAL, ZEXT, SEXT, BITCAST, FPTRUNC, FPTOUI, FPTOSI, UITOFP, SITOFP, INTTOPTR, PTRTOINT
+        if (const Instruction* inst = SVFUtil::dyn_cast<Instruction>(val))
+        {
+            switch (inst->getOpcode())
+            {
+            case Instruction::ZExt:
+                return CopyStmt::ZEXT;
+            case Instruction::SExt:
+                return CopyStmt::SEXT;
+            case Instruction::BitCast:
+                return CopyStmt::BITCAST;
+            case Instruction ::Trunc:
+                return CopyStmt::TRUNC;
+            case Instruction::FPTrunc:
+                return CopyStmt::FPTRUNC;
+            case Instruction::FPToUI:
+                return CopyStmt::FPTOUI;
+            case Instruction::FPToSI:
+                return CopyStmt::FPTOSI;
+            case Instruction::UIToFP:
+                return CopyStmt::UITOFP;
+            case Instruction::SIToFP:
+                return CopyStmt::SITOFP;
+            case Instruction::IntToPtr:
+                return CopyStmt::INTTOPTR;
+            case Instruction::PtrToInt:
+                return CopyStmt::PTRTOINT;
+            default:
+                return CopyStmt::COPYVAL;
+            }
+        }
+        assert (false && "Unknown cast inst!");
+        abort();
+    }
+
     /// Add Copy edge
     inline void addPhiStmt(NodeID res, NodeID opnd, const ICFGNode* pred)
     {
@@ -357,59 +463,66 @@ protected:
     /// Add Store edge
     inline void addStoreEdge(NodeID src, NodeID dst)
     {
-        IntraICFGNode* node;
-        if(const SVFInstruction* inst = SVFUtil::dyn_cast<SVFInstruction>(curVal))
-            node = pag->getICFG()->getIntraICFGNode(inst);
+        ICFGNode* node;
+        if (const Instruction* inst = SVFUtil::dyn_cast<Instruction>(curVal))
+            node = llvmModuleSet()->getICFGNode(
+                       SVFUtil::cast<Instruction>(inst));
         else
             node = nullptr;
-        if(StoreStmt *edge = pag->addStoreStmt(src, dst, node))
+        if (StoreStmt* edge = pag->addStoreStmt(src, dst, node))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     /// Add Call edge
     inline void addCallEdge(NodeID src, NodeID dst, const CallICFGNode* cs, const FunEntryICFGNode* entry)
     {
-        if(CallPE *edge = pag->addCallPE(src, dst, cs, entry))
+        if (CallPE* edge = pag->addCallPE(src, dst, cs, entry))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     /// Add Return edge
     inline void addRetEdge(NodeID src, NodeID dst, const CallICFGNode* cs, const FunExitICFGNode* exit)
     {
-        if(RetPE *edge = pag->addRetPE(src, dst, cs, exit))
+        if (RetPE* edge = pag->addRetPE(src, dst, cs, exit))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     /// Add Gep edge
-    inline void addGepEdge(NodeID src, NodeID dst, const LocationSet& ls, bool constGep)
+    inline void addGepEdge(NodeID src, NodeID dst, const AccessPath& ap, bool constGep)
     {
-        if(GepStmt *edge = pag->addGepStmt(src, dst, ls, constGep))
+        if (GepStmt* edge = pag->addGepStmt(src, dst, ap, constGep))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     /// Add Offset(Gep) edge
-    inline void addNormalGepEdge(NodeID src, NodeID dst, const LocationSet& ls)
+    inline void addNormalGepEdge(NodeID src, NodeID dst, const AccessPath& ap)
     {
-        if(GepStmt *edge = pag->addNormalGepStmt(src, dst, ls))
+        if (GepStmt* edge = pag->addNormalGepStmt(src, dst, ap))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     /// Add Variant(Gep) edge
-    inline void addVariantGepEdge(NodeID src, NodeID dst, const LocationSet& ls)
+    inline void addVariantGepEdge(NodeID src, NodeID dst, const AccessPath& ap)
     {
-        if(GepStmt *edge = pag->addVariantGepStmt(src, dst, ls))
+        if (GepStmt* edge = pag->addVariantGepStmt(src, dst, ap))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     /// Add Thread fork edge for parameter passing
     inline void addThreadForkEdge(NodeID src, NodeID dst, const CallICFGNode* cs, const FunEntryICFGNode* entry)
     {
-        if(TDForkPE *edge = pag->addThreadForkPE(src, dst, cs, entry))
+        if (TDForkPE* edge = pag->addThreadForkPE(src, dst, cs, entry))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     /// Add Thread join edge for parameter passing
     inline void addThreadJoinEdge(NodeID src, NodeID dst, const CallICFGNode* cs, const FunExitICFGNode* exit)
     {
-        if(TDJoinPE *edge = pag->addThreadJoinPE(src, dst, cs, exit))
+        if (TDJoinPE* edge = pag->addThreadJoinPE(src, dst, cs, exit))
             setCurrentBBAndValueForPAGEdge(edge);
     }
     //@}
 
-    LocationSet getLocationSetFromBaseNode(NodeID nodeId);
+    AccessPath getAccessPathFromBaseNode(NodeID nodeId);
+
+private:
+    LLVMModuleSet* llvmModuleSet()
+    {
+        return LLVMModuleSet::getLLVMModuleSet();
+    }
 };
 
 } // End namespace SVF

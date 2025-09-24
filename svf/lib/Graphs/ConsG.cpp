@@ -60,7 +60,8 @@ void ConstraintGraph::buildCG()
                 copys.end(); iter != eiter; ++iter)
     {
         const CopyStmt* edge = SVFUtil::cast<CopyStmt>(*iter);
-        addCopyCGEdge(edge->getRHSVarID(),edge->getLHSVarID());
+        if(edge->isBitCast() || edge->isValueCopy())
+            addCopyCGEdge(edge->getRHSVarID(),edge->getLHSVarID());
     }
 
     SVFStmt::SVFStmtSetTy& phis = getPAGEdgeSet(SVFStmt::Phi);
@@ -121,7 +122,7 @@ void ConstraintGraph::buildCG()
         if(edge->isVariantFieldGep())
             addVariantGepCGEdge(edge->getRHSVarID(),edge->getLHSVarID());
         else
-            addNormalGepCGEdge(edge->getRHSVarID(),edge->getLHSVarID(),edge->getLocationSet());
+            addNormalGepCGEdge(edge->getRHSVarID(),edge->getLHSVarID(),edge->getAccessPath());
     }
 
     SVFStmt::SVFStmtSetTy& loads = getPAGEdgeSet(SVFStmt::Load);
@@ -139,8 +140,39 @@ void ConstraintGraph::buildCG()
         StoreStmt* edge = SVFUtil::cast<StoreStmt>(*iter);
         addStoreCGEdge(edge->getRHSVarID(),edge->getLHSVarID());
     }
+
+    clearSolitaries();
 }
 
+/*!
+ * Remove nodes that are neither pointers nor connected with any edge
+ */
+void ConstraintGraph::clearSolitaries()
+{
+    /// We don't remove return SVFVar from an indirect callsite
+    NodeSet retFromIndCalls;
+    for(auto cs_pair : pag->getIndirectCallsites())
+    {
+        const RetICFGNode* retBlockNode = cs_pair.first->getRetICFGNode();
+        if(pag->callsiteHasRet(retBlockNode))
+            retFromIndCalls.insert(pag->getCallSiteRet(retBlockNode)->getId());
+    }
+
+    Set<ConstraintNode*> nodesToRemove;
+    for (auto it = this->begin(); it != this->end(); ++it)
+    {
+        if (it->second->hasIncomingEdge() || it->second->hasOutgoingEdge())
+            continue;
+        if (pag->getGNode(it->first)->isPointer())
+            continue;
+        if (retFromIndCalls.find(it->first)!=retFromIndCalls.end())
+            continue;
+        nodesToRemove.insert(it->second);
+    }
+
+    for (auto node : nodesToRemove)
+        removeConstraintNode(node);
+}
 
 /*!
  * Memory has been cleaned up at GenericGraph
@@ -158,7 +190,7 @@ AddrCGEdge::AddrCGEdge(ConstraintNode* s, ConstraintNode* d, EdgeID id)
     // Retarget addr edges may lead s to be a dummy node
     PAGNode* node = SVFIR::getPAG()->getGNode(s->getId());
     (void)node; // Suppress warning of unused variable under release build
-    if (!SVFModule::pagReadFromTXT())
+    if (!SVFIR::pagReadFromTXT())
     {
         assert(!SVFUtil::isa<DummyValVar>(node) && "a dummy node??");
     }
@@ -210,14 +242,15 @@ CopyCGEdge* ConstraintGraph::addCopyCGEdge(NodeID src, NodeID dst)
 /*!
  * Add Gep edge
  */
-NormalGepCGEdge*  ConstraintGraph::addNormalGepCGEdge(NodeID src, NodeID dst, const LocationSet& ls)
+NormalGepCGEdge*  ConstraintGraph::addNormalGepCGEdge(NodeID src, NodeID dst, const AccessPath& ap)
 {
     ConstraintNode* srcNode = getConstraintNode(src);
     ConstraintNode* dstNode = getConstraintNode(dst);
     if (hasEdge(srcNode, dstNode, ConstraintEdge::NormalGep))
         return nullptr;
 
-    NormalGepCGEdge* edge = new NormalGepCGEdge(srcNode, dstNode,ls, edgeIndex++);
+    NormalGepCGEdge* edge =
+        new NormalGepCGEdge(srcNode, dstNode, ap, edgeIndex++);
 
     bool inserted = directEdgeSet.insert(edge).second;
     (void)inserted; // Suppress warning of unused variable under release build
@@ -297,7 +330,7 @@ StoreCGEdge* ConstraintGraph::addStoreCGEdge(NodeID src, NodeID dst)
  *
  * (1) Remove edge from old dst target,
  * (2) Change edge dst id and
- * (3) Add modifed edge into new dst
+ * (3) Add modified edge into new dst
  */
 void ConstraintGraph::reTargetDstOfEdge(ConstraintEdge* edge, ConstraintNode* newDstNode)
 {
@@ -320,9 +353,9 @@ void ConstraintGraph::reTargetDstOfEdge(ConstraintEdge* edge, ConstraintNode* ne
     }
     else if(NormalGepCGEdge* gep = SVFUtil::dyn_cast<NormalGepCGEdge>(edge))
     {
-        const LocationSet ls = gep->getLocationSet();
+        const AccessPath ap = gep->getAccessPath();
         removeDirectEdge(gep);
-        addNormalGepCGEdge(srcId,newDstNodeID,ls);
+        addNormalGepCGEdge(srcId,newDstNodeID, ap);
     }
     else if(VariantGepCGEdge* gep = SVFUtil::dyn_cast<VariantGepCGEdge>(edge))
     {
@@ -364,9 +397,9 @@ void ConstraintGraph::reTargetSrcOfEdge(ConstraintEdge* edge, ConstraintNode* ne
     }
     else if(NormalGepCGEdge* gep = SVFUtil::dyn_cast<NormalGepCGEdge>(edge))
     {
-        const LocationSet ls = gep->getLocationSet();
+        const AccessPath ap = gep->getAccessPath();
         removeDirectEdge(gep);
-        addNormalGepCGEdge(newSrcNodeID,dstId,ls);
+        addNormalGepCGEdge(newSrcNodeID, dstId, ap);
     }
     else if(VariantGepCGEdge* gep = SVFUtil::dyn_cast<VariantGepCGEdge>(edge))
     {
@@ -695,6 +728,11 @@ ConstraintNode::const_iterator ConstraintNode::directInEdgeEnd() const
 }
 //@}
 
+const std::string ConstraintNode::toString() const
+{
+    return SVFIR::getPAG()->getGNode(getId())->toString();
+}
+
 /*!
  * GraphTraits specialization for constraint graph
  */
@@ -737,7 +775,7 @@ struct DOTGraphTraits<ConstraintGraph*> : public DOTGraphTraits<SVFIR*>
             if (SVFUtil::isa<ValVar>(node))
             {
                 if (nameDisplay)
-                    rawstr << node->getId() << ":" << node->getValueName();
+                    rawstr << node->getId() << ":" << node->getName();
                 else
                     rawstr << node->getId();
             }
@@ -748,7 +786,7 @@ struct DOTGraphTraits<ConstraintGraph*> : public DOTGraphTraits<SVFIR*>
         {
             // print the whole value
             if (!SVFUtil::isa<DummyValVar>(node) && !SVFUtil::isa<DummyObjVar>(node))
-                rawstr << node->getId() << ":" << node->getValue()->toString();
+                rawstr << node->toString();
             else
                 rawstr << node->getId() << ":";
 
@@ -773,18 +811,18 @@ struct DOTGraphTraits<ConstraintGraph*> : public DOTGraphTraits<SVFIR*>
         {
             if(SVFUtil::isa<GepObjVar>(node))
                 return "shape=doubleoctagon";
-            else if(SVFUtil::isa<FIObjVar>(node))
+            else if(SVFUtil::isa<BaseObjVar>(node))
                 return "shape=box3d";
             else if (SVFUtil::isa<DummyObjVar>(node))
                 return "shape=tab";
             else
                 return "shape=component";
         }
-        else if (SVFUtil::isa<RetPN>(node))
+        else if (SVFUtil::isa<RetValPN>(node))
         {
             return "shape=Mrecord";
         }
-        else if (SVFUtil::isa<VarArgPN>(node))
+        else if (SVFUtil::isa<VarArgValPN>(node))
         {
             return "shape=octagon";
         }

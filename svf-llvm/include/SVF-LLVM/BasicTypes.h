@@ -41,6 +41,7 @@
 #include <llvm/IR/GetElementPtrTypeIterator.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Statepoint.h>
+#include <llvm/IR/Intrinsics.h>
 
 #include <llvm/Analysis/MemoryLocation.h>
 #include <llvm/Analysis/DominanceFrontier.h>
@@ -61,6 +62,7 @@
 #include <llvm/BinaryFormat/Dwarf.h> // for dwarf tags
 
 #include <llvm/Analysis/LoopInfo.h>
+#include <llvm/Demangle/Demangle.h>
 
 namespace SVF
 {
@@ -124,6 +126,7 @@ typedef llvm::ConstantInt ConstantInt;
 typedef llvm::ConstantFP ConstantFP;
 typedef llvm::ConstantPointerNull ConstantPointerNull;
 typedef llvm::GlobalAlias GlobalAlias;
+typedef llvm::GlobalIFunc GlobalIFunc;
 typedef llvm::GlobalVariable GlobalVariable;
 
 /// LLVM Dominators
@@ -176,6 +179,11 @@ typedef llvm::VAStartInst VAStartInst;
 typedef llvm::BinaryOperator BinaryOperator;
 typedef llvm::UnaryOperator UnaryOperator;
 typedef llvm::UndefValue UndefValue;
+typedef llvm::GEPOperator GEPOperator;
+
+// Related to Switch Case
+typedef std::pair<const BasicBlock*, const ConstantInt*> SuccBBAndCondValPair;
+typedef std::vector<SuccBBAndCondValPair> SuccBBAndCondValPairVec;
 
 // LLVM Intrinsic Instructions
 #if LLVM_VERSION_MAJOR >= 13
@@ -183,7 +191,7 @@ typedef llvm::IntrinsicInst IntrinsicInst;
 typedef llvm::DbgInfoIntrinsic DbgInfoIntrinsic;
 typedef llvm::DbgVariableIntrinsic DbgVariableIntrinsic;
 typedef llvm::DbgDeclareInst DbgDeclareInst;
-typedef llvm::DbgAddrIntrinsic DbgAddrIntrinsic;
+typedef llvm::DbgInfoIntrinsic DbgInfoIntrinsic;
 typedef llvm::DbgValueInst DbgValueInst;
 typedef llvm::DbgLabelInst DbgLabelInst;
 typedef llvm::VPIntrinsic VPIntrinsic;

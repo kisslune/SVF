@@ -32,7 +32,7 @@
 #define INCLUDE_SVFIR_SVFSTATEMENT_H_
 
 #include "Graphs/GenericGraph.h"
-#include "MemoryModel/LocationSet.h"
+#include "MemoryModel/AccessPath.h"
 
 namespace SVF
 {
@@ -43,6 +43,7 @@ class IntraICFGNode;
 class CallICFGNode;
 class FunEntryICFGNode;
 class FunExitICFGNode;
+class SVFBasicBlock;
 
 /*
  * SVFIR program statements (PAGEdges)
@@ -50,30 +51,53 @@ class FunExitICFGNode;
 typedef GenericEdge<SVFVar> GenericPAGEdgeTy;
 class SVFStmt : public GenericPAGEdgeTy
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
 public:
     /// Types of SVFIR statements
     /// Gep represents (base + offset) for field sensitivity
-    /// ThreadFork/ThreadJoin is to model parameter passings between thread spawners and spawnees.
+    /// ThreadFork/ThreadJoin is to model parameter passings between thread
+    /// spawners and spawnees.
     enum PEDGEK
     {
-        Addr, Copy, Store, Load, Call, Ret, Gep, Phi, Select, Cmp, BinaryOp, UnaryOp, Branch, ThreadFork, ThreadJoin
+        Addr,
+        Copy,
+        Store,
+        Load,
+        Call,
+        Ret,
+        Gep,
+        Phi,
+        Select,
+        Cmp,
+        BinaryOp,
+        UnaryOp,
+        Branch,
+        ThreadFork,
+        ThreadJoin
     };
 
 private:
-    const SVFValue* value;	///< LLVM value
-    const SVFBasicBlock* basicBlock;   ///< LLVM BasicBlock
-    ICFGNode *icfgNode;   ///< ICFGNode
-    EdgeID edgeId;					///< Edge ID
-public:
-    static u32_t totalEdgeNum;		///< Total edge number
+    const SVFVar* value;           ///< LLVM value
+    const SVFBasicBlock* basicBlock; ///< LLVM BasicBlock
+    ICFGNode* icfgNode;              ///< ICFGNode
+    EdgeID edgeId;                   ///< Edge ID
 
-    /// Constructor
-    SVFStmt(SVFVar* s, SVFVar* d, GEdgeFlag k, bool real=true);
-    /// Destructor
-    ~SVFStmt()
+protected:
+    /// Private constructor for reading SVFIR from file without side-effect
+    SVFStmt(GEdgeFlag k)
+        : GenericPAGEdgeTy({}, {}, k), value{}, basicBlock{}, icfgNode{}
     {
     }
+
+public:
+    static u32_t totalEdgeNum; ///< Total edge number
+
+    /// Constructor
+    SVFStmt(SVFVar* s, SVFVar* d, GEdgeFlag k, bool real = true);
+    /// Destructor
+    ~SVFStmt() {}
 
     /// ClassOf
     //@{
@@ -81,7 +105,7 @@ public:
     {
         return true;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Addr ||
                edge->getEdgeKind() == SVFStmt::Copy ||
@@ -90,9 +114,12 @@ public:
                edge->getEdgeKind() == SVFStmt::Call ||
                edge->getEdgeKind() == SVFStmt::Ret ||
                edge->getEdgeKind() == SVFStmt::Gep ||
+               edge->getEdgeKind() == SVFStmt::Phi ||
+               edge->getEdgeKind() == SVFStmt::Select ||
                edge->getEdgeKind() == SVFStmt::Cmp ||
                edge->getEdgeKind() == SVFStmt::BinaryOp ||
-               edge->getEdgeKind() == SVFStmt::UnaryOp  ||
+               edge->getEdgeKind() == SVFStmt::UnaryOp ||
+               edge->getEdgeKind() == SVFStmt::Branch ||
                edge->getEdgeKind() == SVFStmt::ThreadFork ||
                edge->getEdgeKind() == SVFStmt::ThreadJoin;
     }
@@ -108,20 +135,16 @@ public:
 
     /// Get/set methods for llvm instruction
     //@{
-    inline const SVFInstruction* getInst() const
-    {
-        if (const SVFInstruction* i = SVFUtil::dyn_cast<SVFInstruction>(value))
-            return i;
-        return nullptr;
-    }
-    inline void setValue(const SVFValue* val)
+
+    inline void setValue(const SVFVar* val)
     {
         value = val;
     }
-    inline const SVFValue* getValue() const
+    inline const SVFVar* getValue() const
     {
         return value;
     }
+
     inline void setBB(const SVFBasicBlock* bb)
     {
         basicBlock = bb;
@@ -130,7 +153,7 @@ public:
     {
         return basicBlock;
     }
-    inline void setICFGNode(ICFGNode *node)
+    inline void setICFGNode(ICFGNode* node)
     {
         icfgNode = node;
     }
@@ -140,31 +163,39 @@ public:
     }
     //@}
 
-    /// Compute the unique edgeFlag value from edge kind and second variable operand for MultiOpndStmt.
-    static inline GEdgeFlag makeEdgeFlagWithAddionalOpnd(GEdgeKind k, const SVFVar* var)
+    /// Compute the unique edgeFlag value from edge kind and second variable
+    /// operand for MultiOpndStmt.
+    static inline GEdgeFlag makeEdgeFlagWithAddionalOpnd(GEdgeKind k,
+            const SVFVar* var)
     {
-        Var2LabelMap::const_iterator iter = var2LabelMap.find(var);
-        u64_t label = (iter != var2LabelMap.end()) ?
-                      iter->second : multiOpndLabelCounter++;
+        auto it_inserted = var2LabelMap.emplace(var, multiOpndLabelCounter);
+        if (it_inserted.second)
+            ++multiOpndLabelCounter;
+        u64_t label = it_inserted.first->second;
         return (label << EdgeKindMaskBits) | k;
     }
 
-    /// Compute the unique edgeFlag value from edge kind and call site Instruction.
-    static inline GEdgeFlag makeEdgeFlagWithCallInst(GEdgeKind k, const ICFGNode* cs)
+    /// Compute the unique edgeFlag value from edge kind and call site
+    /// Instruction.
+    static inline GEdgeFlag makeEdgeFlagWithCallInst(GEdgeKind k,
+            const ICFGNode* cs)
     {
-        Inst2LabelMap::const_iterator iter = inst2LabelMap.find(cs);
-        u64_t label = (iter != inst2LabelMap.end()) ?
-                      iter->second : callEdgeLabelCounter++;
+        auto it_inserted = inst2LabelMap.emplace(cs, callEdgeLabelCounter);
+        if (it_inserted.second)
+            ++callEdgeLabelCounter;
+        u64_t label = it_inserted.first->second;
         return (label << EdgeKindMaskBits) | k;
     }
 
     /// Compute the unique edgeFlag value from edge kind and store Instruction.
     /// Two store instructions may share the same StorePAGEdge
-    static inline GEdgeFlag makeEdgeFlagWithStoreInst(GEdgeKind k, const ICFGNode* store)
+    static inline GEdgeFlag makeEdgeFlagWithStoreInst(GEdgeKind k,
+            const ICFGNode* store)
     {
-        Inst2LabelMap::const_iterator iter = inst2LabelMap.find(store);
-        u64_t label = (iter != inst2LabelMap.end()) ?
-                      iter->second : storeEdgeLabelCounter++;
+        auto it_inserted = inst2LabelMap.emplace(store, storeEdgeLabelCounter);
+        if (it_inserted.second)
+            ++storeEdgeLabelCounter;
+        u64_t label = it_inserted.first->second;
         return (label << EdgeKindMaskBits) | k;
     }
 
@@ -198,10 +229,12 @@ private:
 /*
  Parent class of Addr, Copy, Store, Load, Call, Ret, NormalGep, VariantGep, ThreadFork, ThreadJoin
  connecting RHS expression and LHS expression with an assignment  (e.g., LHSExpr = RHSExpr)
- Only one operand on the right handside of an assignment
+ Only one operand on the right hand side of an assignment
 */
 class AssignStmt : public SVFStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
 private:
     AssignStmt();                      ///< place holder
@@ -214,18 +247,18 @@ private:
 
 protected:
     /// constructor
-    AssignStmt(SVFVar* s, SVFVar* d, GEdgeFlag k) : SVFStmt(s,d,k)
-    {
-    }
+    AssignStmt(SVFVar* s, SVFVar* d, GEdgeFlag k) : SVFStmt(s, d, k) {}
+    /// Constructor to create empty AssignStmt (for SVFIRReader/serialization)
+    AssignStmt(GEdgeFlag k) : SVFStmt(k) {}
 
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const AssignStmt *)
+    static inline bool classof(const AssignStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Addr ||
                edge->getEdgeKind() == SVFStmt::Copy ||
@@ -237,7 +270,7 @@ public:
                edge->getEdgeKind() == SVFStmt::ThreadFork ||
                edge->getEdgeKind() == SVFStmt::ThreadJoin;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Addr ||
                edge->getEdgeKind() == SVFStmt::Copy ||
@@ -276,69 +309,138 @@ public:
  */
 class AddrStmt: public AssignStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    AddrStmt();                      ///< place holder
-    AddrStmt(const AddrStmt &);  ///< place holder
-    void operator=(const AddrStmt &); ///< place holder
+    /// Constructs empty AddrStmt (for SVFIRReader/serialization)
+    AddrStmt() : AssignStmt(SVFStmt::Addr) {}
+    AddrStmt(const AddrStmt&);       ///< place holder
+    void operator=(const AddrStmt&); ///< place holder
+
+    std::vector<SVFVar*> arrSize;	///< Array size of the allocated memory
 
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const AddrStmt *)
+    static inline bool classof(const AddrStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Addr;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Addr;
     }
     //@}
 
     /// constructor
-    AddrStmt(SVFVar* s, SVFVar* d) : AssignStmt(s,d,SVFStmt::Addr)
-    {
-    }
+    AddrStmt(SVFVar* s, SVFVar* d) : AssignStmt(s, d, SVFStmt::Addr) {}
 
     virtual const std::string toString() const override;
-};
 
+    inline void addArrSize(SVFVar* size)   //TODO:addSizeVar
+    {
+        arrSize.push_back(size);
+    }
+
+    ///< get array size of the allocated memory
+    inline const std::vector<SVFVar*>& getArrSize() const   //TODO:getSizeVars
+    {
+        return arrSize;
+    }
+
+};
 
 /*!
  * Copy statements (simple assignment and casting)
  */
 class CopyStmt: public AssignStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 private:
-    CopyStmt();                      ///< place holder
-    CopyStmt(const CopyStmt &);  ///< place holder
-    void operator=(const CopyStmt &); ///< place holder
+    /// Constructs empty CopyStmt (for SVFIRReader/serialization)
+    CopyStmt() : AssignStmt(SVFStmt::Copy) {}
+    CopyStmt(const CopyStmt&);       ///< place holder
+    void operator=(const CopyStmt&); ///< place holder
 public:
+    enum CopyKind
+    {
+        COPYVAL,    // Value copies (default one)
+        ZEXT,       // Zero extend integers
+        SEXT,       // Sign extend integers
+        BITCAST,    // Type cast
+        TRUNC,      // Truncate integers
+        FPTRUNC,    // Truncate floating point
+        FPTOUI,     // floating point -> UInt
+        FPTOSI,     // floating point -> SInt
+        UITOFP,     // UInt -> floating point
+        SITOFP,     // SInt -> floating point
+        INTTOPTR,   // Integer -> Pointer
+        PTRTOINT    // Pointer -> Integer
+    };
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const CopyStmt *)
+    static inline bool classof(const CopyStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Copy;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Copy;
     }
     //@}
 
-    /// constructor
-    CopyStmt(SVFVar* s, SVFVar* d) : AssignStmt(s,d,SVFStmt::Copy)
+    /// Return the kind of the copy statement
+    inline u32_t getCopyKind() const
     {
+        return copyKind;
     }
 
+    inline bool isBitCast() const
+    {
+        return copyKind == BITCAST;
+    }
+
+    inline bool isValueCopy() const
+    {
+        return copyKind == COPYVAL;
+    }
+
+    inline bool isInt2Ptr() const
+    {
+        return copyKind == INTTOPTR;
+    }
+
+    inline bool isPtr2Int() const
+    {
+        return copyKind == PTRTOINT;
+    }
+
+    inline bool isZext() const
+    {
+        return copyKind == ZEXT;
+    }
+
+    inline bool isSext() const
+    {
+        return copyKind == SEXT;
+    }
+
+    /// constructor
+    CopyStmt(SVFVar* s, SVFVar* d, CopyKind k) : AssignStmt(s, d, SVFStmt::Copy), copyKind(k) {}
+
     virtual const std::string toString() const override;
+private:
+    u32_t copyKind;
 };
 
 /*!
@@ -346,123 +448,142 @@ public:
  */
 class StoreStmt: public AssignStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    StoreStmt();                      ///< place holder
-    StoreStmt(const StoreStmt &);  ///< place holder
-    void operator=(const StoreStmt &); ///< place holder
+    /// Constructs empty StoreStmt (for SVFIRReader/serialization)
+    StoreStmt() : AssignStmt(SVFStmt::Store) {}
+    StoreStmt(const StoreStmt&);      ///< place holder
+    void operator=(const StoreStmt&); ///< place holder
 
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const StoreStmt *)
+    static inline bool classof(const StoreStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Store;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Store;
     }
     //@}
 
     /// constructor
-    StoreStmt(SVFVar* s, SVFVar* d, const IntraICFGNode* st);
+    StoreStmt(SVFVar* s, SVFVar* d, const ICFGNode* st);
 
     virtual const std::string toString() const override;
 };
-
 
 /*!
  * Load statement
  */
 class LoadStmt: public AssignStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    LoadStmt();                      ///< place holder
-    LoadStmt(const LoadStmt &);  ///< place holder
-    void operator=(const LoadStmt &); ///< place holder
+    /// Constructs empty LoadStmt (for SVFIRReader/serialization)
+    LoadStmt(): AssignStmt(SVFStmt::Load) {}
+    LoadStmt(const LoadStmt&);       ///< place holder
+    void operator=(const LoadStmt&); ///< place holder
 
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const LoadStmt *)
+    static inline bool classof(const LoadStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Load;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Load;
     }
     //@}
 
     /// constructor
-    LoadStmt(SVFVar* s, SVFVar* d) : AssignStmt(s,d,SVFStmt::Load)
-    {
-    }
+    LoadStmt(SVFVar* s, SVFVar* d) : AssignStmt(s, d, SVFStmt::Load) {}
 
     virtual const std::string toString() const override;
 };
-
 
 /*!
  * Gep statement for struct field access, array access and pointer arithmetic
  */
 class GepStmt: public AssignStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    GepStmt();                      ///< place holder
+    /// Constructs empty GepStmt (for SVFIRReader/serialization)
+    GepStmt() : AssignStmt(SVFStmt::Gep) {}
     GepStmt(const GepStmt &);  ///< place holder
     void operator=(const GepStmt &); ///< place holder
 
-    LocationSet ls;	///< location set of the gep edge
+    AccessPath ap;	///< Access path of the GEP edge
     bool variantField;  ///< Gep statement with a variant field index (pointer arithmetic) for struct field access (e.g., p = &(q + f), where f is a variable)
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const GepStmt *)
+    static inline bool classof(const GepStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return 	edge->getEdgeKind() == SVFStmt::Gep;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return	edge->getEdgeKind() == SVFStmt::Gep;
     }
     //@}
 
-    inline const LocationSet& getLocationSet() const
+    inline const AccessPath& getAccessPath() const
     {
-        return ls;
+        return ap;
     }
-    inline const LocationSet::OffsetValueVec& getOffsetValueVec() const
+    inline const AccessPath::IdxOperandPairs getOffsetVarAndGepTypePairVec() const
     {
-        return getLocationSet().getOffsetValueVec();
+        return getAccessPath().getIdxOperandPairVec();
     }
     /// Return TRUE if this is a constant location set.
     inline bool isConstantOffset() const
     {
-        return getLocationSet().isConstantOffset();
+        return getAccessPath().isConstantOffset();
     }
+
     /// Return accumulated constant offset (when accessing array or struct) if this offset is a constant.
-    inline s32_t accumulateConstantOffset() const
+    /// elemBytesize is the element byte size of an static alloc or heap alloc array
+    /// e.g. GepStmt* gep = **,
+    /// s32_t elemBytesize = LLVMUtil::SVFType2ByteSize(gep->getRHSVar()->getValue()->getType());
+    /// APOffset byteOffset = gep->accumulateConstantByteOffset(elemBytesize);
+    inline APOffset accumulateConstantByteOffset() const
     {
-        return getLocationSet().accumulateConstantOffset();
+        return getAccessPath().computeConstantByteOffset();
+    }
+
+    /// Return accumulated constant offset (when accessing array or struct) if this offset is a constant.
+    inline APOffset accumulateConstantOffset() const
+    {
+        return getAccessPath().computeConstantOffset();
     }
     /// Field index of the gep statement if it access the field of a struct
-    inline s32_t getConstantFieldIdx() const
+    inline APOffset getConstantStructFldIdx() const
     {
-        assert(isVariantFieldGep()==false && "Can't retrieve the LocationSet if using a variable field index (pointer arithmetic) for struct field access ");
-        return getLocationSet().accumulateConstantFieldIdx();
+        assert(isVariantFieldGep()==false && "Can't retrieve the AccessPath if using a variable field index (pointer arithmetic) for struct field access ");
+        return getAccessPath().getConstantStructFldIdx();
     }
     /// Gep statement with a variant field index (pointer arithmetic) for struct field access
     inline bool isVariantFieldGep() const
@@ -471,7 +592,8 @@ public:
     }
 
     /// constructor
-    GepStmt(SVFVar* s, SVFVar* d, const LocationSet& l, bool varfld=false) : AssignStmt(s,d,SVFStmt::Gep), ls(l), variantField(varfld)
+    GepStmt(SVFVar* s, SVFVar* d, const AccessPath& ap, bool varfld = false)
+        : AssignStmt(s, d, SVFStmt::Gep), ap(ap), variantField(varfld)
     {
     }
 
@@ -485,29 +607,35 @@ public:
  */
 class CallPE: public AssignStmt
 {
-private:
-    CallPE();                      ///< place holder
-    CallPE(const CallPE &);  ///< place holder
-    void operator=(const CallPE &); ///< place holder
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
-    const CallICFGNode* call;		        /// the callsite statement calling from
-    const FunEntryICFGNode* entry;		/// the function exit statement calling to
+private:
+    CallPE(const CallPE&);         ///< place holder
+    void operator=(const CallPE&); ///< place holder
+
+    const CallICFGNode* call;      /// the callsite statement calling from
+    const FunEntryICFGNode* entry; /// the function exit statement calling to
+protected:
+    /// Constructs empty CallPE (for SVFIRReader/serialization)
+    CallPE(GEdgeFlag k = SVFStmt::Call) : AssignStmt(k), call{}, entry{} {}
+
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const CallPE *)
+    static inline bool classof(const CallPE*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
-        return edge->getEdgeKind() == SVFStmt::Call
-               || edge->getEdgeKind() == SVFStmt::ThreadFork;
+        return edge->getEdgeKind() == SVFStmt::Call ||
+               edge->getEdgeKind() == SVFStmt::ThreadFork;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
-        return edge->getEdgeKind() == SVFStmt::Call
-               || edge->getEdgeKind() == SVFStmt::ThreadFork;
+        return edge->getEdgeKind() == SVFStmt::Call ||
+               edge->getEdgeKind() == SVFStmt::ThreadFork;
     }
     //@}
 
@@ -534,35 +662,41 @@ public:
     virtual const std::string toString() const override;
 };
 
-
 /*!
  * Return
  */
 class RetPE: public AssignStmt
 {
-private:
-    RetPE();                      ///< place holder
-    RetPE(const RetPE &);  ///< place holder
-    void operator=(const RetPE &); ///< place holder
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
 
-    const CallICFGNode* call;		        /// the callsite statement returning to
-    const FunExitICFGNode* exit;		/// the function exit statement returned from
+private:
+    RetPE(const RetPE&);          ///< place holder
+    void operator=(const RetPE&); ///< place holder
+
+    const CallICFGNode* call;    /// the callsite statement returning to
+    const FunExitICFGNode* exit; /// the function exit statement returned from
+
+protected:
+    /// Constructs empty RetPE (for SVFIRReader/serialization)
+    RetPE(GEdgeFlag k = SVFStmt::Ret) : AssignStmt(k), call{}, exit{} {}
+
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const RetPE *)
+    static inline bool classof(const RetPE*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
-        return edge->getEdgeKind() == SVFStmt::Ret
-               || edge->getEdgeKind() == SVFStmt::ThreadJoin;
+        return edge->getEdgeKind() == SVFStmt::Ret ||
+               edge->getEdgeKind() == SVFStmt::ThreadJoin;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
-        return edge->getEdgeKind() == SVFStmt::Ret
-               || edge->getEdgeKind() == SVFStmt::ThreadJoin;
+        return edge->getEdgeKind() == SVFStmt::Ret ||
+               edge->getEdgeKind() == SVFStmt::ThreadJoin;
     }
     //@}
 
@@ -594,44 +728,48 @@ public:
 */
 class MultiOpndStmt : public SVFStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 public:
     typedef std::vector<SVFVar*> OPVars;
+
 private:
     MultiOpndStmt();                      ///< place holder
-    MultiOpndStmt(const MultiOpndStmt &);  ///< place holder
-    void operator=(const MultiOpndStmt &); ///< place holder
-    SVFVar* getSrcNode();  ///< not allowed, use getOpVar(idx) instead
-    SVFVar* getDstNode();    ///< not allowed, use getRes() instead
-    NodeID getSrcID();  ///< not allowed, use getOpVarID(idx) instead
+    MultiOpndStmt(const MultiOpndStmt&);  ///< place holder
+    void operator=(const MultiOpndStmt&); ///< place holder
+    SVFVar* getSrcNode(); ///< not allowed, use getOpVar(idx) instead
+    SVFVar* getDstNode(); ///< not allowed, use getRes() instead
+    NodeID getSrcID();    ///< not allowed, use getOpVarID(idx) instead
     NodeID getDstID();    ///< not allowed, use getResID() instead
 
 protected:
     OPVars opVars;
-    /// Constructor, only used by subclassess but not external users
+    /// Constructor, only used by subclasses but not external users
     MultiOpndStmt(SVFVar* r, const OPVars& opnds, GEdgeFlag k);
+    /// Constructs empty MultiOpndStmt (for SVFIRReader/serialization)
+    MultiOpndStmt(GEdgeFlag k) : SVFStmt(k) {}
+
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const MultiOpndStmt *)
+    static inline bool classof(const MultiOpndStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *node)
+    static inline bool classof(const SVFStmt* node)
     {
-        return node->getEdgeKind() == Phi ||
-               node->getEdgeKind() == Select ||
-               node->getEdgeKind() == BinaryOp ||
-               node->getEdgeKind() == Cmp;
+        return node->getEdgeKind() == Phi || node->getEdgeKind() == Select ||
+               node->getEdgeKind() == BinaryOp || node->getEdgeKind() == Cmp;
     }
-    static inline bool classof(const GenericPAGEdgeTy *node)
+    static inline bool classof(const GenericPAGEdgeTy* node)
     {
-        return node->getEdgeKind() == Phi ||
-               node->getEdgeKind() == Select ||
-               node->getEdgeKind() == BinaryOp ||
-               node->getEdgeKind() == Cmp;
+        return node->getEdgeKind() == Phi || node->getEdgeKind() == Select ||
+               node->getEdgeKind() == BinaryOp || node->getEdgeKind() == Cmp;
     }
     //@}
-    /// Operands and result at a BinaryNode e.g., p = q + r, `p` is resVar and `r` is OpVar
+    /// Operands and result at a BinaryNode e.g., p = q + r, `p` is resVar and
+    /// `r` is OpVar
     //@{
     /// Operand SVFVars
     inline const SVFVar* getOpVar(u32_t pos) const
@@ -672,46 +810,54 @@ public:
  */
 class PhiStmt: public MultiOpndStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 public:
-    typedef std::vector<const ICFGNode* > OpICFGNodeVec;
+    typedef std::vector<const ICFGNode*> OpICFGNodeVec;
 
 private:
-    PhiStmt();                      ///< place holder
-    PhiStmt(const PhiStmt &);  ///< place holder
-    void operator=(const PhiStmt &); ///< place holder
+    /// Constructs empty PhiStmt (for SVFIRReader/serialization)
+    PhiStmt() : MultiOpndStmt(SVFStmt::Phi) {}
+    PhiStmt(const PhiStmt&);        ///< place holder
+    void operator=(const PhiStmt&); ///< place holder
 
     OpICFGNodeVec opICFGNodes;
+
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const PhiStmt *)
+    static inline bool classof(const PhiStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Phi;
     }
-    static inline bool classof(const MultiOpndStmt *edge)
+    static inline bool classof(const MultiOpndStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Phi;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Phi;
     }
     //@}
 
     /// constructor
-    PhiStmt(SVFVar* s, const OPVars& opnds, const OpICFGNodeVec& icfgNodes) : MultiOpndStmt(s,opnds,SVFStmt::Phi), opICFGNodes(icfgNodes)
+    PhiStmt(SVFVar* s, const OPVars& opnds, const OpICFGNodeVec& icfgNodes)
+        : MultiOpndStmt(s, opnds, SVFStmt::Phi), opICFGNodes(icfgNodes)
     {
-        assert(opnds.size()==icfgNodes.size() && "Numbers of operands and their ICFGNodes are not consistent?");
+        assert(opnds.size() == icfgNodes.size() &&
+               "Numbers of operands and their ICFGNodes are not consistent?");
     }
     void addOpVar(SVFVar* op, const ICFGNode* inode)
     {
         opVars.push_back(op);
         opICFGNodes.push_back(inode);
-        assert(opVars.size()==opICFGNodes.size() && "Numbers of operands and their ICFGNodes are not consistent?");
+        assert(opVars.size() == opICFGNodes.size() &&
+               "Numbers of operands and their ICFGNodes are not consistent?");
     }
 
     /// Return the corresponding ICFGNode of this operand
@@ -732,28 +878,33 @@ public:
  */
 class SelectStmt: public MultiOpndStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    SelectStmt();                      ///< place holder
-    SelectStmt(const SelectStmt &);  ///< place holder
-    void operator=(const SelectStmt &); ///< place holder
+    /// Constructs empty SelectStmt (for SVFIRReader/serialization)
+    SelectStmt() : MultiOpndStmt(SVFStmt::Select), condition{} {}
+    SelectStmt(const SelectStmt&);     ///< place holder
+    void operator=(const SelectStmt&); ///< place holder
 
     const SVFVar* condition;
+
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const SelectStmt *)
+    static inline bool classof(const SelectStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Select;
     }
-    static inline bool classof(const MultiOpndStmt *edge)
+    static inline bool classof(const MultiOpndStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Select;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Select;
     }
@@ -769,11 +920,11 @@ public:
     }
     inline const SVFVar* getTrueValue() const
     {
-        return  getOpVar(0);
+        return getOpVar(0);
     }
     inline const SVFVar* getFalseValue() const
     {
-        return  getOpVar(1);
+        return getOpVar(1);
     }
 };
 
@@ -782,14 +933,18 @@ public:
  */
 class CmpStmt: public MultiOpndStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    CmpStmt();                      ///< place holder
-    CmpStmt(const CmpStmt &);  ///< place holder
-    void operator=(const CmpStmt &); ///< place holder
+    /// Constructs empty CmpStmt (for SVFIRReader/serialization)
+    CmpStmt() : MultiOpndStmt(SVFStmt::Cmp) {}
+    CmpStmt(const CmpStmt&);        ///< place holder
+    void operator=(const CmpStmt&); ///< place holder
 
     u32_t predicate;
-public:
 
+public:
     /// OpCode for CmpStmt, enum value is same to llvm CmpInst
     enum Predicate : unsigned
     {
@@ -830,19 +985,19 @@ public:
 
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const CmpStmt *)
+    static inline bool classof(const CmpStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Cmp;
     }
-    static inline bool classof(const MultiOpndStmt *edge)
+    static inline bool classof(const MultiOpndStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Cmp;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Cmp;
     }
@@ -859,41 +1014,60 @@ public:
     virtual const std::string toString() const override;
 };
 
-
 /*!
  * Binary statement
  */
 class BinaryOPStmt: public MultiOpndStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    BinaryOPStmt();                      ///< place holder
-    BinaryOPStmt(const BinaryOPStmt &);  ///< place holder
-    void operator=(const BinaryOPStmt &); ///< place holder
+    /// Constructs empty BinaryOPStmt (for SVFIRReader/serialization)
+    BinaryOPStmt() : MultiOpndStmt(SVFStmt::BinaryOp) {}
+    BinaryOPStmt(const BinaryOPStmt&);   ///< place holder
+    void operator=(const BinaryOPStmt&); ///< place holder
     u32_t opcode;
 
 public:
-    /// OpCode for BinaryOPStmt, enum value is same to llvm BinaryOperator
-    enum OpCode: unsigned
+    /// OpCode for BinaryOPStmt, enum value is same to llvm BinaryOperator (llvm/IR/Instruction.def)
+    enum OpCode : unsigned
     {
-        Add = 13, FAdd = 14, Sub = 15, FSub = 16, Mul = 17, FMul = 18, UDiv = 19, SDiv = 20, FDiv = 21, URem = 22,
-        SRem = 23, FRem = 24, Shl = 25, LShr = 26, AShr = 27, And = 28, Or = 29, Xor = 30
+        Add = 13,       // Sum of integers
+        FAdd = 14,      // Sum of floats
+        Sub = 15,       // Subtraction of integers
+        FSub = 16,      // Subtraction of floats
+        Mul = 17,       // Product of integers.
+        FMul = 18,      // Product of floats.
+        UDiv = 19,      // Unsigned division.
+        SDiv = 20,      // Signed division.
+        FDiv = 21,      // Float division.
+        URem = 22,      // Unsigned remainder
+        SRem = 23,      // Signed remainder
+        FRem = 24,      // Float remainder
+        Shl = 25,       // Shift left  (logical)
+        LShr = 26,      // Shift right (logical)
+        AShr = 27,      // Shift right (arithmetic)
+        And = 28,       // Logical and
+        Or = 29,        // Logical or
+        Xor = 30        // Logical xor
     };
 
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const BinaryOPStmt *)
+    static inline bool classof(const BinaryOPStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::BinaryOp;
     }
-    static inline bool classof(const MultiOpndStmt *edge)
+    static inline bool classof(const MultiOpndStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::BinaryOp;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::BinaryOp;
     }
@@ -915,16 +1089,21 @@ public:
  */
 class UnaryOPStmt: public SVFStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    UnaryOPStmt();                      ///< place holder
-    UnaryOPStmt(const UnaryOPStmt &);  ///< place holder
-    void operator=(const UnaryOPStmt &); ///< place holder
-    SVFVar* getSrcNode();  ///< place holder, use getOpVar() instead
-    SVFVar* getDstNode();    ///< place holder, use getRes() instead
-    NodeID getSrcID();  ///< place holder, use getOpVarID(pos) instead
+    /// Constructs empty UnaryOPStmt (for SVFIRReader/serialization)
+    UnaryOPStmt() : SVFStmt(SVFStmt::UnaryOp) {}
+    UnaryOPStmt(const UnaryOPStmt&);    ///< place holder
+    void operator=(const UnaryOPStmt&); ///< place holder
+    SVFVar* getSrcNode(); ///< place holder, use getOpVar() instead
+    SVFVar* getDstNode(); ///< place holder, use getRes() instead
+    NodeID getSrcID();    ///< place holder, use getOpVarID(pos) instead
     NodeID getDstID();    ///< place holder, use getResID() instead
 
     u32_t opcode;
+
 public:
     /// OpCode for UnaryOPStmt, enum value is same to llvm::UnaryOperator
     enum OpCode : unsigned
@@ -934,22 +1113,23 @@ public:
 
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const UnaryOPStmt *)
+    static inline bool classof(const UnaryOPStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::UnaryOp;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::UnaryOp;
     }
     //@}
 
     /// constructor
-    UnaryOPStmt(SVFVar* s, SVFVar* d, u32_t oc) : SVFStmt(s,d,SVFStmt::UnaryOp), opcode(oc)
+    UnaryOPStmt(SVFVar* s, SVFVar* d, u32_t oc)
+        : SVFStmt(s, d, SVFStmt::UnaryOp), opcode(oc)
     {
     }
 
@@ -971,22 +1151,26 @@ public:
     virtual const std::string toString() const override;
 };
 
-
 /*!
  * Branch statements including if/else and switch
  */
 class BranchStmt: public SVFStmt
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 public:
-    typedef std::vector<std::pair<const ICFGNode*, s32_t> > SuccAndCondPairVec;
+    typedef std::vector<std::pair<const ICFGNode*, s32_t>> SuccAndCondPairVec;
+
 private:
-    BranchStmt();                      ///< place holder
-    BranchStmt(const BranchStmt &);  ///< place holder
-    void operator=(const BranchStmt &); ///< place holder
-    SVFVar* getSrcNode();  ///< place holder, not allowed
-    SVFVar* getDstNode();    ///< place holder, not allowed
-    NodeID getSrcID();  ///< place holder, use getOpVarID(pos) instead
-    NodeID getDstID();    ///< place holder, use getResID() instead
+    /// Constructs empty BranchStmt (for SVFIRReader/serialization)
+    BranchStmt() : SVFStmt(SVFStmt::Branch), cond{}, brInst{} {}
+    BranchStmt(const BranchStmt&);     ///< place holder
+    void operator=(const BranchStmt&); ///< place holder
+    SVFVar* getSrcNode();              ///< place holder, not allowed
+    SVFVar* getDstNode();              ///< place holder, not allowed
+    NodeID getSrcID(); ///< place holder, use getOpVarID(pos) instead
+    NodeID getDstID(); ///< place holder, use getResID() instead
 
     SuccAndCondPairVec successors;
     const SVFVar* cond;
@@ -995,22 +1179,24 @@ private:
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const BranchStmt *)
+    static inline bool classof(const BranchStmt*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Branch;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::Branch;
     }
     //@}
 
     /// constructor
-    BranchStmt(SVFVar* inst, SVFVar* c, const SuccAndCondPairVec& succs) : SVFStmt(c,inst,SVFStmt::Branch), successors(succs), cond(c), brInst(inst)
+    BranchStmt(SVFVar* inst, SVFVar* c, const SuccAndCondPairVec& succs)
+        : SVFStmt(c, inst, SVFStmt::Branch), successors(succs), cond(c),
+          brInst(inst)
     {
     }
 
@@ -1029,9 +1215,8 @@ public:
     /// successor(0): stmt1, 1
     /// successor(1): stmt2, 0
 
-    /// For example switch(c) case 0: {stmt1; break;} case 1: {stmt2; break;} default {stmt3: break}
-    /// successor(0): stmt1, 0
-    /// successor(1): stmt2, 1
+    /// For example switch(c) case 0: {stmt1; break;} case 1: {stmt2; break;}
+    /// default {stmt3: break} successor(0): stmt1, 0 successor(1): stmt2, 1
     /// successor(3): stmt3, -1
 
     /// Successors of this branch statement
@@ -1044,11 +1229,11 @@ public:
     {
         return successors;
     }
-    const ICFGNode* getSuccessor (u32_t i) const
+    const ICFGNode* getSuccessor(u32_t i) const
     {
         return successors.at(i).first;
     }
-    s64_t getSuccessorCondValue (u32_t i) const
+    s64_t getSuccessorCondValue(u32_t i) const
     {
         return successors.at(i).second;
     }
@@ -1056,75 +1241,82 @@ public:
     virtual const std::string toString() const override;
 };
 
-
 /*!
  * Thread Fork
  */
 class TDForkPE: public CallPE
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    TDForkPE();                      ///< place holder
-    TDForkPE(const TDForkPE &);  ///< place holder
-    void operator=(const TDForkPE &); ///< place holder
+    /// Constructs empty TDForkPE (for SVFIRReader/serialization)
+    TDForkPE() : CallPE(SVFStmt::ThreadFork) {}
+    TDForkPE(const TDForkPE&);       ///< place holder
+    void operator=(const TDForkPE&); ///< place holder
 
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const TDForkPE *)
+    static inline bool classof(const TDForkPE*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::ThreadFork;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::ThreadFork;
     }
     //@}
 
     /// constructor
-    TDForkPE(SVFVar* s, SVFVar* d, const CallICFGNode* i, const FunEntryICFGNode* entry) :
-        CallPE(s,d,i,entry,SVFStmt::ThreadFork)
+    TDForkPE(SVFVar* s, SVFVar* d, const CallICFGNode* i,
+             const FunEntryICFGNode* entry)
+        : CallPE(s, d, i, entry, SVFStmt::ThreadFork)
     {
     }
 
     virtual const std::string toString() const;
 };
 
-
-
 /*!
  * Thread Join
  */
 class TDJoinPE: public RetPE
 {
+    friend class SVFIRWriter;
+    friend class SVFIRReader;
+
 private:
-    TDJoinPE();                      ///< place holder
-    TDJoinPE(const TDJoinPE &);  ///< place holder
-    void operator=(const TDJoinPE &); ///< place holder
+    /// Constructs empty TDJoinPE (for SVFIRReader/serialization)
+    TDJoinPE() : RetPE(SVFStmt::ThreadJoin) {}
+    TDJoinPE(const TDJoinPE&);       ///< place holder
+    void operator=(const TDJoinPE&); ///< place holder
 
 public:
     /// Methods for support type inquiry through isa, cast, and dyn_cast:
     //@{
-    static inline bool classof(const TDJoinPE *)
+    static inline bool classof(const TDJoinPE*)
     {
         return true;
     }
-    static inline bool classof(const SVFStmt *edge)
+    static inline bool classof(const SVFStmt* edge)
     {
         return edge->getEdgeKind() == SVFStmt::ThreadJoin;
     }
-    static inline bool classof(const GenericPAGEdgeTy *edge)
+    static inline bool classof(const GenericPAGEdgeTy* edge)
     {
         return edge->getEdgeKind() == SVFStmt::ThreadJoin;
     }
     //@}
 
     /// Constructor
-    TDJoinPE(SVFVar* s, SVFVar* d, const CallICFGNode* i, const FunExitICFGNode* e) :
-        RetPE(s,d,i,e, SVFStmt::ThreadJoin)
+    TDJoinPE(SVFVar* s, SVFVar* d, const CallICFGNode* i,
+             const FunExitICFGNode* e)
+        : RetPE(s, d, i, e, SVFStmt::ThreadJoin)
     {
     }
 

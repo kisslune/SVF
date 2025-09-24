@@ -38,29 +38,30 @@ using namespace SVF;
 using namespace SVFUtil;
 
 /// Initialize analysis
-void SrcSnkDDA::initialize(SVFModule* module)
+void SrcSnkDDA::initialize()
 {
     SVFIR* pag = PAG::getPAG();
 
     AndersenWaveDiff* ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
+    memSSA.setSaberCondAllocator(getSaberCondAllocator());
     if(Options::SABERFULLSVFG())
         svfg =  memSSA.buildFullSVFG(ander);
     else
         svfg =  memSSA.buildPTROnlySVFG(ander);
     setGraph(memSSA.getSVFG());
-    ptaCallGraph = ander->getPTACallGraph();
+    callgraph = ander->getCallGraph();
     //AndersenWaveDiff::releaseAndersenWaveDiff();
     /// allocate control-flow graph branch conditions
-    getSaberCondAllocator()->allocate(getPAG()->getModule());
+    getSaberCondAllocator()->allocate();
 
     initSrcs();
     initSnks();
 }
 
-void SrcSnkDDA::analyze(SVFModule* module)
+void SrcSnkDDA::analyze()
 {
 
-    initialize(module);
+    initialize();
 
     ContextCond::setMaxCxtLen(Options::CxtLimit());
 
@@ -105,7 +106,6 @@ void SrcSnkDDA::analyze(SVFModule* module)
 
         reportBug(getCurSlice());
     }
-
     finalize();
 
 }

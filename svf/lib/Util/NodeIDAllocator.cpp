@@ -44,7 +44,7 @@ void NodeIDAllocator::unset(void)
 
 // Initialise counts to 4 because that's how many special nodes we have.
 NodeIDAllocator::NodeIDAllocator(void)
-    : numObjects(4), numValues(4), numSymbols(4), numNodes(4), strategy(Options::NodeAllocStrat())
+    : numObjects(4), numValues(4), numSymbols(4), numNodes(4), numType(0), strategy(Options::NodeAllocStrat())
 { }
 
 NodeID NodeIDAllocator::allocateObjectId(void)
@@ -77,11 +77,16 @@ NodeID NodeIDAllocator::allocateObjectId(void)
         assert(false && "NodeIDAllocator::allocateObjectId: unimplemented node allocation strategy.");
     }
 
-    ++numObjects;
-    ++numNodes;
+    increaseNumOfObjAndNodes();
 
     assert(id != 0 && "NodeIDAllocator::allocateObjectId: ID not allocated");
     return id;
+}
+
+
+NodeID NodeIDAllocator::allocateTypeId()
+{
+    return numType++;
 }
 
 NodeID NodeIDAllocator::allocateGepObjectId(NodeID base, u32_t offset, u32_t maxFieldLimit)
@@ -120,8 +125,7 @@ NodeID NodeIDAllocator::allocateGepObjectId(NodeID base, u32_t offset, u32_t max
         assert(false && "NodeIDAllocator::allocateGepObjectId: unimplemented node allocation strategy");
     }
 
-    ++numObjects;
-    ++numNodes;
+    increaseNumOfObjAndNodes();
 
     assert(id != 0 && "NodeIDAllocator::allocateGepObjectId: ID not allocated");
     return id;
@@ -287,7 +291,7 @@ std::vector<NodeID> NodeIDAllocator::Clusterer::cluster(BVDataPTAImpl *pta, cons
     }
 
     // Points-to sets which are relevant to a region, i.e., those whose elements
-    // belong to that region. Pair is for occurences.
+    // belong to that region. Pair is for occurrences.
     std::vector<std::vector<std::pair<const PointsTo *, unsigned>>> regionsPointsTos(numRegions);
     for (const Map<PointsTo, unsigned>::value_type &ptocc : pointsToSets)
     {
@@ -308,7 +312,7 @@ std::vector<NodeID> NodeIDAllocator::Clusterer::cluster(BVDataPTAImpl *pta, cons
     overallStats[NumRegions] = std::to_string(numRegions);
 
     std::vector<hclust_fast_methods> methods;
-    if (Options::ClusterMethod() == HCLUST_METHOD_SVF_BEST)
+    if ((enum hclust_fast_methods)Options::ClusterMethod() == HCLUST_METHOD_SVF_BEST)
     {
         methods.push_back(HCLUST_METHOD_SINGLE);
         methods.push_back(HCLUST_METHOD_COMPLETE);
@@ -316,7 +320,7 @@ std::vector<NodeID> NodeIDAllocator::Clusterer::cluster(BVDataPTAImpl *pta, cons
     }
     else
     {
-        methods.push_back(Options::ClusterMethod());
+        methods.push_back((enum hclust_fast_methods)Options::ClusterMethod());
     }
 
     for (const hclust_fast_methods method : methods)
@@ -476,7 +480,7 @@ double *NodeIDAllocator::Clusterer::getDistanceMatrix(const std::vector<std::pai
                     // We have something like distance == x, existingDistance == x - e, for some e < 1
                     // (potentially even set during this iteration).
                     // So, the new distance is an occurrence the existingDistance being tracked, it just
-                    // had some reductions because of multiple occurences.
+                    // had some reductions because of multiple occurrences.
                     // If there is not room within this distance to reduce more (increase priority),
                     // just ignore it. TODO: maybe warn?
                     if (existingDistance - occ * occurrenceEpsilon > std::floor(existingDistance))
@@ -657,7 +661,7 @@ std::pair<hclust_fast_methods, std::vector<NodeID>> NodeIDAllocator::Clusterer::
     std::pair<hclust_fast_methods, std::vector<NodeID>> bestMapping = candidates[0];
     // Number of bits required for the best candidate.
     size_t bestWords = std::numeric_limits<size_t>::max();
-    if (evalSubtitle != "" || Options::ClusterMethod() == HCLUST_METHOD_SVF_BEST)
+    if (evalSubtitle != "" || (enum hclust_fast_methods)Options::ClusterMethod() == HCLUST_METHOD_SVF_BEST)
     {
         for (const std::pair<hclust_fast_methods, std::vector<NodeID>> &candidate : candidates)
         {

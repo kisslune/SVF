@@ -24,7 +24,6 @@ namespace SVF
 {
 
 class AndersenWaveDiff;
-class SVFModule;
 
 /*!
  * Versioned flow sensitive whole program pointer analysis
@@ -111,6 +110,45 @@ protected:
     /// Override since we want to assign different weights based on versioning.
     virtual void cluster(void) override;
 
+public:
+    /// Returns true if l is a store node.
+    virtual bool isStore(const NodeID l) const;
+
+    /// Returns true if l is a load node.
+    virtual bool isLoad(const NodeID l) const;
+
+    /// Shared code for getConsume and getYield. They wrap this function.
+    Version getVersion(const NodeID l, const NodeID o, const LocVersionMap &lvm) const;
+
+    /// Returns the consumed version of o at l. If no such version exists, returns invalidVersion.
+    Version getConsume(const NodeID l, const NodeID o) const;
+
+    /// Returns the yielded version of o at l. If no such version exists, returns invalidVersion.
+    Version getYield(const NodeID l, const NodeID o) const;
+
+    /// Returns the versions of o which rely on o:v.
+    std::vector<Version> &getReliantVersions(const NodeID o, const Version v);
+
+    /// Returns the statements which rely on o:v.
+    NodeBS &getStmtReliance(const NodeID o, const Version v);
+
+    /// Dumps versionReliance and stmtReliance.
+    void dumpReliances(void) const;
+
+    /// Dumps maps consume and yield.
+    void dumpLocVersionMaps(void) const;
+
+    void solveAndwritePtsToFile(const std::string& filename) override;
+
+    void writeVersionedAnalysisResultToFile(const std::string& filename);
+
+    void readVersionedAnalysisResultFromFile(std::ifstream& F);
+
+    void readPtsFromFile(const std::string& filename) override;
+
+    /// Dumps a MeldVersion to stdout.
+    static void dumpMeldVersion(MeldVersion &v);
+
 private:
     /// Prelabel the SVFG: set y(o) for stores and c(o) for delta nodes to a new version.
     void prelabel(void);
@@ -134,12 +172,6 @@ private:
     /// Fills in isStoreMap and isLoadMap.
     virtual void buildIsStoreLoadMaps(void);
 
-    /// Returns true if l is a store node.
-    virtual bool isStore(const NodeID l) const;
-
-    /// Returns true if l is a load node.
-    virtual bool isLoad(const NodeID l) const;
-
     /// Fills in deltaMap and deltaSourceMap for the SVFG.
     virtual void buildDeltaMaps(void);
 
@@ -151,15 +183,6 @@ private:
     /// edge to a delta node due to on-the-fly callgraph construction.
     virtual bool deltaSource(const NodeID l) const;
 
-    /// Shared code for getConsume and getYield. They wrap this function.
-    Version getVersion(const NodeID l, const NodeID o, const LocVersionMap &lvm) const;
-
-    /// Returns the consumed version of o at l. If no such version exists, returns invalidVersion.
-    Version getConsume(const NodeID l, const NodeID o) const;
-
-    /// Returns the yielded version of o at l. If no such version exists, returns invalidVersion.
-    Version getYield(const NodeID l, const NodeID o) const;
-
     /// Shared code for setConsume and setYield. They wrap this function.
     void setVersion(const NodeID l, const NodeID o, const Version v, LocVersionMap &lvm);
 
@@ -168,21 +191,6 @@ private:
 
     /// Sets the yielded version of o at l to v.
     void setYield(const NodeID l, const NodeID o, const Version v);
-
-    /// Returns the versions of o which rely on o:v.
-    std::vector<Version> &getReliantVersions(const NodeID o, const Version v);
-
-    /// Returns the statements which rely on o:v.
-    NodeBS &getStmtReliance(const NodeID o, const Version v);
-
-    /// Dumps versionReliance and stmtReliance.
-    void dumpReliances(void) const;
-
-    /// Dumps maps consume and yield.
-    void dumpLocVersionMaps(void) const;
-
-    /// Dumps a MeldVersion to stdout.
-    static void dumpMeldVersion(MeldVersion &v);
 
     /// Maps locations to objects to a version. The object version is what is
     /// consumed at that location.

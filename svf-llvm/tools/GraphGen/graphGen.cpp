@@ -33,6 +33,7 @@
 #include "Util/CommandLine.h"
 #include "Util/Options.h"
 #include "WPA/Andersen.h"
+#include "WPA/WPAPass.h"
 
 using namespace llvm;
 using namespace std;
@@ -41,44 +42,43 @@ using namespace SVF;
 static Option<bool> PEGGen("peg", "Generate PEG", false);
 static Option<bool> VFGGen("vfg", "Generate VFG", false);
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
 
-    char** arg_value = new char*[argc];
+    char **arg_value = new char *[argc];
     std::vector<std::string> moduleNameVec;
     moduleNameVec =
-        OptionBase::parseOptions(argc, argv, "Whole Program Points-to Analysis",
-                                 "[options] <input-bitcode...>");
+            OptionBase::parseOptions(argc, argv, "Whole Program Points-to Analysis",
+                                     "[options] <input-bitcode...>");
 
     if (Options::WriteAnder() == "ir_annotator")
     {
-        LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
+        LLVMModuleSet::preProcessBCs(moduleNameVec);
     }
 
-    SVFModule* svfModule =
-        LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
+    LLVMModuleSet::buildSVFModule(moduleNameVec);
 
     /// Build SVFIR
-    SVFIRBuilder builder(svfModule);
-    SVFIR* pag = builder.build();
+    SVFIRBuilder builder;
+    SVFIR *pag = builder.build();
 
     if (PEGGen())
     {
-        PEG* graph = new PEG();
+        PEG *graph = new PEG();
         graph->build(pag);
-        std::string gName = svfModule->getModuleIdentifier() + ".peg.dig";
+        std::string gName = PAG::getPAG()->getModuleIdentifier() + ".peg.dig";
         if (!Options::writeGraph().empty())
             gName = Options::writeGraph();
         graph->writeGraph(gName);
     }
     else if (VFGGen())
     {
-        AndersenWaveDiff* ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
-        auto memSSA = new SaberSVFGBuilder();
-        memSSA->buildPTROnlySVFG(ander);
-        IVFG* graph = new IVFG();
-        graph->build(memSSA->getSVFG());
-        std::string gName = svfModule->getModuleIdentifier() + ".vfg.dig";
+        auto ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
+        SVFGBuilder svfgBuilder;
+        auto svfg = svfgBuilder.buildPTROnlySVFG(ander);
+        IVFG *graph = new IVFG();
+        graph->build(svfg);
+        std::string gName = PAG::getPAG()->getModuleIdentifier() + ".vfg.dig";
         if (!Options::writeGraph().empty())
             gName = Options::writeGraph();
         graph->writeGraph(gName);

@@ -1,4 +1,5 @@
-//===- Steensgaard.cpp -- Steensgaard's field-insensitive analysis--------------//
+//===- Steensgaard.cpp -- Steensgaard's field-insensitive
+// analysis--------------//
 //
 //                     SVF: Static Value-Flow Analysis
 //
@@ -32,7 +33,7 @@
 using namespace SVF;
 using namespace SVFUtil;
 
-Steensgaard *Steensgaard::steens = nullptr;
+Steensgaard* Steensgaard::steens = nullptr;
 
 /*!
  * Steensgaard analysis
@@ -50,7 +51,7 @@ void Steensgaard::solveWorklist()
         ConstraintNode* node = consCG->getConstraintNode(nodeId);
 
         /// foreach o \in pts(p)
-        for(NodeID o : getPts(nodeId))
+        for (NodeID o : getPts(nodeId))
         {
 
             /// *p = q : EC(o) == EC(q)
@@ -68,36 +69,34 @@ void Steensgaard::solveWorklist()
         /// q = p : EC(q) == EC(p)
         for (ConstraintEdge* edge : node->getCopyOutEdges())
         {
-            ecUnion(edge->getSrcID(),edge->getDstID());
+            ecUnion(edge->getSrcID(), edge->getDstID());
         }
         /// q = &p->f : EC(q) == EC(p)
         for (ConstraintEdge* edge : node->getGepOutEdges())
         {
-            ecUnion(edge->getSrcID(),edge->getDstID());
+            ecUnion(edge->getSrcID(), edge->getDstID());
         }
     }
 }
-
 
 void Steensgaard::setEC(NodeID node, NodeID rep)
 {
     rep = getEC(rep);
     Set<NodeID>& subNodes = getSubNodes(node);
-    for(NodeID sub : subNodes)
+    for (NodeID sub : subNodes)
     {
         nodeToECMap[sub] = rep;
-        addSubNode(rep,sub);
+        addSubNode(rep, sub);
     }
     subNodes.clear();
 }
 
-
 /// merge node into equiv class and merge node's pts into ec's pts
 void Steensgaard::ecUnion(NodeID node, NodeID ec)
 {
-    if(unionPts(ec, node))
+    if (unionPts(ec, node))
         pushIntoWorklist(ec);
-    setEC(node,ec);
+    setEC(node, ec);
 }
 
 /*!
@@ -105,10 +104,13 @@ void Steensgaard::ecUnion(NodeID node, NodeID ec)
  */
 void Steensgaard::processAllAddr()
 {
-    for (ConstraintGraph::const_iterator nodeIt = consCG->begin(), nodeEit = consCG->end(); nodeIt != nodeEit; nodeIt++)
+    for (ConstraintGraph::const_iterator nodeIt = consCG->begin(),
+            nodeEit = consCG->end();
+            nodeIt != nodeEit; nodeIt++)
     {
-        ConstraintNode * cgNode = nodeIt->second;
-        for (ConstraintNode::const_iterator it = cgNode->incomingAddrsBegin(), eit = cgNode->incomingAddrsEnd();
+        ConstraintNode* cgNode = nodeIt->second;
+        for (ConstraintNode::const_iterator it = cgNode->incomingAddrsBegin(),
+                eit = cgNode->incomingAddrsEnd();
                 it != eit; ++it)
         {
             numOfProcessedAddr++;
@@ -116,9 +118,8 @@ void Steensgaard::processAllAddr()
             const AddrCGEdge* addr = cast<AddrCGEdge>(*it);
             NodeID dst = addr->getDstID();
             NodeID src = addr->getSrcID();
-            if(addPts(dst,src))
+            if (addPts(dst, src))
                 pushIntoWorklist(dst);
         }
     }
 }
-
